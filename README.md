@@ -20,3 +20,5 @@ Tables include:
 The raw data is not included for confidentiality purposes. 
 
 Tidyverse is used ad nauseum since it is vastly versatile for data querying and cleaning. 
+
+This work is highly iterative and a constantly changing process. Not just in trial-and-error/learning, but in the sense that the study is constantly revised based on new collections of counts and discoveries in the data. Hence the multiple drafts... (though I would like to think that the drafts improve in quality as they continue)
