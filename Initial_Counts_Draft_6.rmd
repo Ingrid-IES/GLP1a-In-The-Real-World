@@ -1,0 +1,617 @@
+---
+title: "Initial_Counts_Draft_6"
+author: "Ingrid Shu"
+date: "7/15/2021"
+output: pdf_document
+---
+# New to this draft:
+-	Use rob’s code to include a bunch of other demographic variables
+
+- only 18+ year olds
+
+-	Change enrollment criteria to 72 + weeks
+
+-	Everyone in df should have at least one weigh in (-8, 0] and at least one weight in (0, 68], where 0 = firstDispDate
+
+-	Make potentially erroneous weights to NA
+
+- Time windows
+
+```{r setup, include=FALSE, warning = F, message = F}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F)
+library(tidyverse)
+library(readxl)
+library(readr)
+library(lubridate)
+library(magrittr)
+```
+
+
+## Read in EHR Demographic Data
+```{r, warning = F, message = F}
+ehr_demographic <- read_csv("Excel_Data/PATH_JING_LUO_DEMOGRAPHIC_2020_03_31.csv")
+
+# Convert BIRTH_DATE to date
+ehr_demographic$BIRTH_DATE = as.Date(ehr_demographic$BIRTH_DATE, "%m/%d/%Y")
+
+
+# Add factor demographic variables
+ehr_demographic$SEX.f = factor(ehr_demographic$SEX, levels = c("M", "F"), labels = c("Male", "Female"))
+
+ehr_demographic$RACE.f = factor(ehr_demographic$RACE, levels = c("1", "2", "3", "4", 
+                                                                 "5", "6", "7", "NI", "UN", "OT"),
+                                labels = c("American Indian or Alaska Native", "Asian", "Black or African American",
+                                           "Native Hawaiian or Other Pacific Islander", "White", "Multiple race", 
+                                           "Refuse to answer", "No information", "Unknown", "Other"))
+ehr_demographic$RACEWBO = NA
+ehr_demographic$RACEWBO[ehr_demographic$RACE == "5"] = 1 # White
+ehr_demographic$RACEWBO[ehr_demographic$RACE == "3"] = 2 # Black
+ehr_demographic$RACEWBO[ehr_demographic$RACE %in% c("1", "2", "4", "6", "7", "NI", "OT")] = 3
+
+ehr_demographic$RACE_WBO.f = factor(ehr_demographic$RACEWBO, levels = 1:3,
+                                labels = c("White", "Black or African American", "Other/ Unknown/ No Information/ Refused"))
+
+ehr_demographic$HISPANIC_YN = NA
+ehr_demographic$HISPANIC_YN[ehr_demographic$HISPANIC == "Y"] = 1
+ehr_demographic$HISPANIC_YN[ehr_demographic$HISPANIC %in% c("N", "NI", "R")] = 0
+
+ehr_demographic$HISPANIC_YN.f = factor(ehr_demographic$HISPANIC_YN, levels = 0:1,
+                                       labels = c("No/No Information/Refused", "Yes"))
+```
+
+
+```{r}
+ehr_demographic
+
+ehr_demographic %>% distinct(STUDY_ID)
+```
+14597 distinct patients with EHR demographic data (each one has one row).
+
+
+## Read in EHR Enrollment Data
+```{r,warning = F, message = F}
+ehr_enrollment <- read_csv("Excel_Data/PATH_JING_LUO_ENROLLMENT_2020_03_31.csv")
+
+# Convert to dates
+ehr_enrollment$ENR_START_DATE =  as.Date(ehr_enrollment$ENR_START_DATE, "%m/%d/%Y")
+ehr_enrollment$ENR_END_DATE = as.Date(ehr_enrollment$ENR_END_DATE, "%m/%d/%Y")
+```
+
+```{r}
+ehr_enrollment
+
+ehr_enrollment %>% distinct(STUDY_ID)
+```
+14597 distinct patients with EHR enrollment data (each one has one row).
+
+## Read in EHR Death Data
+```{r, warning = F, message = F}
+ehr_death = read_csv("Excel_Data/PATH_JING_LUO_DEATH_2020_03_31.csv")
+
+# Convert to dates
+ehr_death$DEATH_DATE =  as.Date(ehr_death$DEATH_DATE, "%m/%d/%Y")
+```
+
+```{r}
+ehr_death
+
+ehr_death %>% distinct(STUDY_ID)
+```
+314 distinct patients with EHR death data. 
+
+
+## Merge demographic and enrollment 
+```{r}
+ehr_dem_enr = merge(ehr_demographic, ehr_enrollment, by = "STUDY_ID"); ehr_dem_enr
+
+ehr_dem_enr %>% distinct(STUDY_ID)
+```
+14597 rows, 14597 distinct patients
+
+
+
+### Merge dem_enr and death
+```{r}
+ehr_dem_enr_death = merge(ehr_dem_enr, ehr_death, by = "STUDY_ID", all.x = TRUE); ehr_dem_enr_death
+```
+## Create AGE variable (requires info from enrollment and demographic)
+```{r}
+ehr_dem_enr_death$AGE_ENROLLMENT = as.numeric(ehr_dem_enr_death$ENR_START_DATE - ehr_dem_enr_death$BIRTH_DATE)/365.25
+
+# Older and younger than 65
+ehr_dem_enr_death$AGE_ENROLLMENT_cat = 0
+ehr_dem_enr_death$AGE_ENROLLMENT_cat[ehr_dem_enr_death$AGE_ENROLLMENT >= 65] = 1
+ehr_dem_enr_death$AGE_ENROLLMENT_cat.f = factor(ehr_dem_enr_death$AGE_ENROLLMENT_cat,
+                                                levels = 0:1,
+                                                labels = c("<65", ">=65"))
+```
+
+## Exclude subjects whose age at enrollment is less than 18 (Keep >= 18)
+```{r}
+ehr_dem_enr_death_18Plus = subset(ehr_dem_enr_death, AGE_ENROLLMENT >= 18); ehr_dem_enr_death_18Plus # 14465
+
+
+ehr_dem_enr_death_18Plus %>% distinct(STUDY_ID)
+```
+
+14465 distinct patients with 18+ age at enrollment 
+
+
+## Read in HP dispensing data
+```{r}
+hp_dispensing = read_csv("Excel_Data/PATH_JING_LUO_HP_DISPENSING_2020_03_31.csv"); hp_dispensing
+
+hp_dispensing %>% distinct(STUDY_ID)
+```
+
+2829475 rows, 13701 distinct patients for HP dispensing
+
+## Filtering only patients dispensed a GLP-1 agonist (no SGLT2's!!)
+```{r}
+hp_dispensing$NDC = hp_dispensing$NDC %>% as.character()
+
+glp1a = c(00169406012, 00169406013, 00169406090, 00169406097, 00169406098, 00169406099, 50090450300, 00169413211, 00169413212, 00169413290, 00169413297, 70518214300, 00169413602, 00169413611, 00169431401, 00169431413, 00169430301, 00169430313, 00169430390, 00169430393, 00169430701, 00169430713, 00310652004, 66780022601, 00310653001, 00310653004, 00310653085, 00310654001, 00310654004, 00310654085, 
+00310651201, 00310651285, 00310652401, 00002143301, 00002143361, 00002143380, 
+50090348400, 00002143401, 00002143461, 00002143480, 50090348300, 00024574101, 00024574000, 00024574702, 00024574502, 00173086701, 00173086702, 00173086735, 00173086761, 00173086601, 00173086602, 00173086635, 00173086661) %>% as.character()
+       
+
+hp_dispensing = filter(hp_dispensing, grepl(paste(glp1a, collapse = "|"), NDC)); hp_dispensing
+```
+
+```{r}
+hp_dispensing %>% distinct(STUDY_ID)
+```
+
+92,661 rows, 7006 distinct patients from HP with GLP1a dispensing.
+
+## Make a column for GLP1a drug name
+```{r}
+lira = c(00169406012, 00169406013, 00169406090, 00169406097, 00169406098, 00169406099, 50090450300) %>% as.character()
+sema_inject = c(00169413211, 00169413212, 00169413290, 00169413297, 70518214300, 00169413602, 00169413611) %>% as.character()
+sema_oral = c(00169431401, 00169431413, 00169430301, 00169430313, 00169430390, 00169430393, 00169430701, 00169430713) %>% as.character()
+exenatide_ER = c(00310652004, 66780022601, 00310653001, 00310653004, 00310653085, 00310654001, 00310654004, 00310654085) %>% as.character()
+exenatide = c(00310651201, 00310651285, 00310652401) %>% as.character()
+dula = c(00002143301, 00002143361, 00002143380, 50090348400, 00002143401,00002143461, 00002143480, 50090348300) %>% as.character()
+lixisenatide = c(00024574101, 00024574000, 00024574702, 00024574502) %>% as.character()
+albiglutide = c(00173086701, 00173086702, 00173086735, 00173086761, 00173086601, 00173086602, 00173086635, 00173086661) %>% as.character()
+```
+
+#### str_pad(lira, 11, pad = "0") is to make sure leading zeros are kept
+```{r}
+hp_dispensing = hp_dispensing %>% mutate(drug = ifelse(NDC %in% str_pad(lira, 11, pad = "0"), "Liraglutide",  
+                                                        ifelse(NDC %in% str_pad(sema_inject, 11, pad = "0"), "Sema_inject",
+                                                                ifelse(NDC %in% str_pad(sema_oral, 11, pad = "0"), "Sema_oral",
+                                                                       ifelse(NDC %in% str_pad(exenatide_ER, 11, pad = "0"), "Exenatide_ER",
+                                                                              ifelse(NDC %in% str_pad(exenatide, 11, pad = "0"), "Exenatide",
+                                                                                     ifelse(NDC %in% str_pad(dula, 11, pad = "0"), "Dulaglutide",
+                                                                                            ifelse(NDC %in% str_pad(lixisenatide, 11, pad = "0"), "Lixisenatide",
+                                                                                                   ifelse(NDC %in% str_pad(albiglutide, 11, pad = "0"), "Albiglutide", "none"
+                                                                                                                                                      )))))))))
+```
+
+## Convert DISPENSE_DATE to date
+```{r}
+hp_dispensing$DISPENSE_DATE = as.Date(hp_dispensing$DISPENSE_DATE, "%m/%d/%Y")
+```
+
+
+## Join ehr_dem_enr_death_18Plus and hp_dispensing
+```{r}
+# we will condense "dem_enr_death" to just "enroll"
+disp_enroll = left_join(hp_dispensing, ehr_dem_enr_death_18Plus); disp_enroll
+```
+
+## Get rid of these 8 blank columns:
+ 
+PRESCRIBINGID, DISPENSE_DOSE_DISP, DISPENSE_DOSE_DISP_UNIT, RAW_DISPENSE_DOSE_DISP, RAW_DISPENSE_DOSE_DISP_UNIT, RAW_DISPENSE_ROUTE, RAW_SEXUAL_ORIENTATION, RAW_GENDER_IDENTITY
+
+```{r}
+disp_enroll = disp_enroll %>% select(-c(PRESCRIBINGID, DISPENSE_DOSE_DISP, DISPENSE_DOSE_DISP_UNIT, RAW_DISPENSE_DOSE_DISP, RAW_DISPENSE_DOSE_DISP_UNIT, RAW_DISPENSE_ROUTE, RAW_SEXUAL_ORIENTATION, RAW_GENDER_IDENTITY))
+
+
+dim(disp_enroll)
+```
+
+```{r}
+distinct(disp_enroll)
+
+disp_enroll %>% distinct(STUDY_ID)
+```
+7006 distinct patients dispensed a GLP1a and have enroll-demographic-death information
+
+## Creating column for FIRST dispensement date per patient
+## also in disp_enroll2, we will get rid of less relevant variables (22)
+```{r}
+disp_enroll1 = disp_enroll %>% select(-c(NDC, BIRTH_DATE, DISPENSINGID, DISPENSE_SOURCE, DISPENSE_SUP, DISPENSE_AMT, RAW_NDC, DISPENSE_ROUTE, BIRTH_TIME, BIOBANK_FLAG, RAW_SEX, RAW_HISPANIC, RAW_RACE, SEXUAL_ORIENTATION, GENDER_IDENTITY, PAT_PREF_LANGUAGE_SPOKEN, RAW_PAT_PREF_LANGUAGE_SPOKEN, ZIP_CODE, RUCA_CODE, CHART, ENR_BASIS, DEATH_SOURCE, DEATH_MATCH_CONFIDENCE))
+
+
+
+disp_enroll2 =  disp_enroll1 %>%
+  group_by(STUDY_ID) %>%
+  mutate(firstDispDate = min(DISPENSE_DATE)) %>%
+  arrange(STUDY_ID, DISPENSE_DATE) %>% 
+  select(STUDY_ID, DISPENSE_DATE, firstDispDate, drug:AGE_ENROLLMENT_cat.f)
+
+
+disp_enroll2
+```
+```{r}
+disp_enroll2 %>% distinct(STUDY_ID)
+disp_enroll2 %>% distinct(STUDY_ID, firstDispDate)
+```
+Good, each distinct patient has their own unique first dispense date.
+
+** code for looking at firstDispDates that fall outside of the enrollment time range is in line 188 of Draft 5 **
+
+## Create a column for 68 weeks after the first dispensement date
+```{r}
+disp_enroll2$firstDispPlus68W = disp_enroll2$firstDispDate + weeks(68)
+
+disp_enroll2 %>% select(STUDY_ID, DISPENSE_DATE, firstDispDate, firstDispPlus68W, ENR_START_DATE, ENR_END_DATE, drug)
+```
+
+# Now create the following time frames:
+
+* -30 days of firstDispDate
+
+* -60 days of firstDispDate
+
+* -90 days of firstDispDate
+
+* +14 days of firstDispDate
+
+* ENR_START_DATE (already have)
+
+```{r}
+disp_enroll3 <- disp_enroll2 %>% 
+  mutate(firstDispMinus30D = firstDispDate - days(30),
+         firstDispMinus60D = firstDispDate - days(60),
+         firstDispMinus90D = firstDispDate - days(90),
+         firstDispPlus14D = firstDispDate + days(14))
+```
+
+## Create a column for the number of weeks between first dispensement date and end of enrollment
+```{r}
+disp_enroll3$firstDispToEndW = difftime(disp_enroll3$ENR_END_DATE, disp_enroll3$firstDispDate, units = "weeks") %>% as.numeric()
+
+disp_enroll3
+```
+## Filter so that only 72+ firstDispToEndW are included
+```{r}
+disp_enroll4 <- disp_enroll3 %>% filter(firstDispToEndW >= 72)
+
+disp_enroll4
+
+```
+4435 distinct patients dispensed GLP1a, have enrollment info, and have 72+ weeks between first dispense date and end of enrollment.
+
+
+## Read in vital table
+```{r warning = F, message = F}
+ehr_vital = read_csv("Excel_Data/PATH_JING_LUO_VITAL_2020_03_31.csv")
+ehr_vital
+ehr_vital %>% distinct(STUDY_ID)
+```
+971,891 rows, 14590 distinct patients in vital table.
+
+```{r}
+colSums(is.na(ehr_vital))
+```
+### Convert MEASURE_DATE to a date
+```{r}
+ehr_vital$MEASURE_DATE = as.Date(ehr_vital$MEASURE_DATE, "%m/%d/%Y")
+```
+
+
+### First, keep only patients that have both WT and ORIGINAL_BMI values
+```{r}
+ehr_vital1 = ehr_vital %>% drop_na(WT, ORIGINAL_BMI); ehr_vital1
+
+ehr_vital1 %>% distinct(STUDY_ID)
+```
+424,844 rows, 14528 distinct patients with vital info (including WT and ORIGINAL_BMI).
+
+```{r}
+colSums(is.na(ehr_vital1))
+```
+
+Since there are 424,844 rows in ehr_vital1 and 424,844 NA values for SMOKING, TOBACCO, TOBACCO_TYPE, RAW_VITAL_SOURCE, RAW_TOBACCO, RAW_TOBACCO_TYPE, and RAW_SMOKING, we will remove these variables.
+
+We will remove variables so that all that remain are STUDY_ID, MEASURE_DATE, WT, ORIGINAL_BMI, DIASTOLIC, and SYSTOLIC. 
+
+```{r}
+ehr_vital2 = ehr_vital1 %>% select(STUDY_ID, MEASURE_DATE, WT, ORIGINAL_BMI, DIASTOLIC, SYSTOLIC); ehr_vital2
+
+ehr_vital2 = distinct(ehr_vital2); ehr_vital2
+ehr_vital2 %>% distinct(STUDY_ID)
+```
+419,505 rows, 14528 distinct patients with complete vitals info (BMI, WT, and MEASURE_DATE).
+
+
+
+## Join disp_enroll4 with ehr_vital2
+```{r}
+left_join(disp_enroll4, ehr_vital2, by = "STUDY_ID")
+```
+## Check out NA values
+```{r}
+colSums(is.na(left_join(disp_enroll4, ehr_vital2, by = "STUDY_ID")))
+```
+Since MEASURE_DATE, WT, and ORIGINAL_BMI are important for our study, we will perform an inner join instead so that each patient can have complete information.
+
+```{r}
+disp_enroll_vitals = inner_join(disp_enroll4, ehr_vital2, by = "STUDY_ID")
+
+disp_enroll_vitals
+```
+## Check out NA values
+```{r}
+colSums(is.na(disp_enroll_vitals))
+```
+Good, now we have MEASURE_DATE, WT, and ORIGINAL_BMI.
+
+```{r}
+disp_enroll_vitals
+distinct(disp_enroll_vitals)
+
+
+disp_enroll_vitals1 = distinct(disp_enroll_vitals)
+```
+2,512,805 rows and 4420 distinct patients with 
+- dispensed a GLP1a
+- have enrollment info
+- 72+ weeks between first dispensement and end of enrollment
+- have complete vital info (BMI & WT)
+
+
+## Flag unusual/potentially erroneous WTs and BMIs
+```{r}
+disp_enroll_vitals2 = disp_enroll_vitals1 %>%
+  mutate(
+    below70WT = ifelse(WT < 70, 1, 0),
+    above700WT = ifelse(WT > 700, 1, 0),
+    below15BMI = ifelse(ORIGINAL_BMI < 15, 1, 0),
+    above90BMI = ifelse(ORIGINAL_BMI > 90, 1, 0)
+    )
+
+disp_enroll_vitals2
+
+```
+## Flag MEASURE_DATES that are between weeks (0 , 68])
+## Also flag MEASURE_DATEs that are between weeks (-8,0]
+```{r}
+disp_enroll_vitals3 = disp_enroll_vitals2 %>% mutate(
+  measBetween0_68 = ifelse(MEASURE_DATE > firstDispDate & MEASURE_DATE <= firstDispPlus68W, 1, 0),
+  measBetweenN8_0 = ifelse(MEASURE_DATE > firstDispDate - weeks(8) & MEASURE_DATE <= firstDispDate, 1, 0)
+)
+
+disp_enroll_vitals3 %>% select(STUDY_ID, firstDispDate, MEASURE_DATE , measBetween0_68, measBetweenN8_0) %>% distinct()
+```
+## Still need to get # of distinct patients with at least one wt in (-8,0] and at least one wt in (0,68]
+```{r}
+# disp_enroll_vitals3[,c('STUDY_ID', 'measBetween0_68', 'measBetweenN8_0')] %>% 
+#   group_by(STUDY_ID) %>%
+#   filter(colSums(disp_enroll_vitals3) >= 1) %>% 
+#   distinct(STUDY_ID)
+
+
+disp_enroll_vitals3 %>% filter(
+  measBetween0_68 == 1
+)
+
+disp_enroll_vitals3 %>% filter(
+  measBetweenN8_0 == 1
+)
+
+```
+If we only include people who have at least one wt in (-8,0] AND at least one wt in (0,68], we would have at most 2526 patients. 
+
+#-------------------------------------------------------------------------------------------------
+# next to do:
+# pick one weight for those with differing weights on same measure_date ###############complete############
+# look at potentially erroneous weights and their proportions  ###############complete############
+# make time windows ###############complete############
+
+#### draft 5 is good to rely on (after correcting it so that only 72+ firstDispToEndW are included). numbers should be similar, but will be slightly different 
+#### since this draft has 18+ y/o only and includes demographic & death table additionally 5
+#-------------------------------------------------------------------------------------------------
+
+## Some STUDY_ID and MEASURE_DATE pairings that have multiple different WT values
+```{r}
+disp_enroll_vitals3 %>% distinct(STUDY_ID, MEASURE_DATE, WT, ORIGINAL_BMI) %>% nrow()
+disp_enroll_vitals3 %>% distinct(STUDY_ID, MEASURE_DATE) %>% nrow()
+```
+960 duplicated rows
+
+## Choosing one random weight & ORIGINAL_BMI per MEASURE_DATE for patients who have 2+ different WTs/BMIs per MEASURE_DATE
+
+A look at the structure of the data
+```{r}
+# arranging by MEASURE_DATE---------------------------------------------------------------------------------------------
+disp_enroll_vitals3 %>% select(STUDY_ID, DISPENSE_DATE, MEASURE_DATE, WT,  firstDispDate) %>% arrange(STUDY_ID, MEASURE_DATE)
+
+
+# arranging by DISPENSE_DATE--------------------------------------------------------------------------------------------
+disp_enroll_vitals3 %>% select(STUDY_ID, DISPENSE_DATE, MEASURE_DATE, WT,  firstDispDate) %>% arrange(STUDY_ID, DISPENSE_DATE)
+
+
+
+
+
+# A deeper look by example
+disp_enroll_vitals3 %>% subset(STUDY_ID == 'PIT018556') #114 rows
+disp_enroll_vitals3 %>% subset(STUDY_ID == 'PIT018556') %>% distinct(MEASURE_DATE) #38 distinct MEASURE_DATEs
+disp_enroll_vitals3 %>% subset(STUDY_ID == 'PIT018556') %>% distinct(DISPENSE_DATE) #3 distinct DISPENSE_DATEs
+disp_enroll_vitals3 %>% subset(STUDY_ID == 'PIT018556') %>% distinct(drug)  # 1 distinct drug
+# STUDY_ID rows = (number of MEASURE_DATEs) * (number of DISPENSE_DATEs) -----------
+
+
+
+# Another example, with 2 different drugs
+disp_enroll_vitals3 %>% subset(STUDY_ID == "PIT084629")
+disp_enroll_vitals3 %>% subset(STUDY_ID == 'PIT084629') %>% distinct(MEASURE_DATE) #25 distinct MEASURE_DATEs
+disp_enroll_vitals3 %>% subset(STUDY_ID == 'PIT084629') %>% distinct(DISPENSE_DATE) #5 distinct DISPENSE_DATEs
+disp_enroll_vitals3 %>% subset(STUDY_ID == 'PIT084629') %>% distinct(drug)  #2 distinct drugs
+# STUDY_ID rows = (number of MEASURE_DATEs) * (number of DISPENSE_DATEs) -----------
+
+```
+
+```{r}
+disp_enroll_vitals4 = disp_enroll_vitals3 %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(1) %>% group_by(STUDY_ID); disp_enroll_vitals4
+
+
+disp_enroll_vitals4 %>% select(STUDY_ID, MEASURE_DATE, DISPENSE_DATE, WT)
+                                                                                                    
+```
+Taking the first slice when grouping by STUDY_ID only grabs the observation from the first DISPENSE_DATE per person, which is okay.
+We will also only be looking at the first dispensed drug for the drug breakdown chart. 
+
+```{r}
+disp_enroll_vitals4 %>% filter(DISPENSE_DATE != firstDispDate)
+```
+
+
+# To see the specific rows with 2+ WT measures, we will temporarily drop DISPENSE_DATE and drug in a table called disp_enroll_vitals_A (to prevent repopulated/redundant rows)
+```{r}
+disp_enroll_vitals_A <- disp_enroll_vitals3 %>% select(-c(DISPENSE_DATE, drug)) %>% distinct(); disp_enroll_vitals_A
+
+
+disp_enroll_vitals_A %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(2) %>% ungroup() %>% group_by(STUDY_ID) # a check of number of differing measures
+
+disp_enroll_vitals_A %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(3) %>% ungroup() %>% group_by(STUDY_ID)# one MEASURE_DATE has 3 differing measures
+
+disp_enroll_vitals_A %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(4) %>% ungroup() %>% group_by(STUDY_ID)
+
+
+disp_enroll_vitals_B <- disp_enroll_vitals_A %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(1) %>% group_by(STUDY_ID); disp_enroll_vitals_B
+```
+
+* 823 distinct patients have at least 1 instance of 2 different weights per same MEASURE_DATE
+
+* 17 distinct patients have at least 1 instance of 3 different weights per same MEASURE_DATE
+
+## We will carry on with using disp_enroll_vitals4 which contains the 4450 patients, this time with only one unique wt per measure_date
+```{r}
+identical(disp_enroll_vitals4 %>% select(-c(DISPENSE_DATE, drug)), disp_enroll_vitals_B)
+```
+
+## Getting rid of DISPENSE_DATE column
+```{r}
+disp_enroll_vitals3 %>% distinct(STUDY_ID, DISPENSE_DATE)
+disp_enroll_vitals4 %>% distinct(STUDY_ID, DISPENSE_DATE)
+
+
+identical(disp_enroll_vitals4, disp_enroll_vitals4 %>% filter(DISPENSE_DATE == firstDispDate)) # true
+
+
+
+disp_enroll_vitals5 = disp_enroll_vitals4 %>% select(-DISPENSE_DATE)
+```
+
+## Checking that each MEASURE_DATE now has one distinct WT and BMI
+```{r}
+disp_enroll_vitals5 %>% distinct(STUDY_ID, MEASURE_DATE, WT, ORIGINAL_BMI) 
+
+disp_enroll_vitals5 %>% distinct(STUDY_ID, MEASURE_DATE)
+```
+
+## Proportion of potentially erroneous body weight measurements
+```{r}
+disp_enroll_vitals5 %>% filter(below70WT == 1 | above700WT ==1)
+```
+
+6235/142540 (4.37%) weights are potentially erroneous. 
+1268/4420 (28.69%) patients have at least one potentially erroneous measurement. 
+
+## Now we can make a body weight value histogram
+## Six-number-summary of body weight values
+(each patient contributes 1 body weight values PER measurement date they have. E.G: Patient A has 5 MEASURE_DATEs and thus will contribute 5 (same or different) weight values)
+```{r}
+# summary of all weights
+summary(disp_enroll_vitals5$WT)
+
+ggplot(disp_enroll_vitals5, aes(WT)) + 
+  geom_histogram(bins = 50, color = "blue", fill = "white") + 
+  labs(x = "Weight (lbs)", 
+       title = "Distribution of weight values")
+```
+
+## What if we made all the potentially erroneous weights as NA?
+```{r}
+NAPotentialErroneous = disp_enroll_vitals5 %>%
+  mutate(WT = ifelse(
+    below70WT == 1 | above700WT ==1,
+    NA,
+    WT
+  ))
+
+
+NAPotentialErroneous %>% select(STUDY_ID, WT, below70WT, above700WT)
+
+
+
+```
+## After setting all potentially erroneous weights to NA and dropping them....
+```{r}
+NAPotentialErroneous %>% drop_na(WT)
+```
+
+We have 136,305 weights total and 4418 distinct patients.
+
+### Define new df as NAPotentialErroneous after dropping NA wts
+```{r}
+disp_enroll_vitals6 = NAPotentialErroneous %>% drop_na(WT)
+```
+
+
+## Six-number-summary of body weight values only wts between 70 & 700
+(each patient contributes 1 body weight values PER measurement date they have. E.G: Patient A has 5 MEASURE_DATEs and thus will contribute 5 (same or different) weight values)
+```{r}
+# summary of all weights
+summary(disp_enroll_vitals6$WT)
+
+ggplot(disp_enroll_vitals6, aes(WT)) + 
+  geom_histogram(bins = 50, color = "blue", fill = "white") + 
+  labs(x = "Weight (lbs)", 
+       title = "Distribution of weight values")
+```
+
+# Making TIME WINDOWS
+(-8, 0], (0, 8], (8, 16]..... (64, 72] in weeks
+```{r}
+disp_enroll_vitals7 = disp_enroll_vitals6 %>% 
+  mutate(
+    measBetweenN8_0 = measBetweenN8_0,
+    measBetween0_8 = ifelse(MEASURE_DATE > firstDispDate & MEASURE_DATE <= firstDispDate + weeks(8), 1, 0),
+    measBetween8_16 = ifelse(MEASURE_DATE > firstDispDate + weeks(8) & MEASURE_DATE <= firstDispDate + weeks(16), 1,0),
+    measBetween16_24 = ifelse(MEASURE_DATE > firstDispDate + weeks(16) & MEASURE_DATE <= firstDispDate + weeks(24), 1, 0),
+    measBetween24_32 = ifelse(MEASURE_DATE > firstDispDate + weeks(24) & MEASURE_DATE <= firstDispDate + weeks(32), 1, 0),
+    measBetween32_40 = ifelse(MEASURE_DATE > firstDispDate + weeks(32) & MEASURE_DATE <= firstDispDate + weeks(40), 1, 0),
+    measBetween40_48 = ifelse(MEASURE_DATE > firstDispDate + weeks(40) & MEASURE_DATE <= firstDispDate + weeks(48), 1, 0),
+    measBetween48_56 = ifelse(MEASURE_DATE > firstDispDate + weeks(48) & MEASURE_DATE <= firstDispDate + weeks(56), 1, 0),
+    measBetween56_64 = ifelse(MEASURE_DATE > firstDispDate + weeks(56) & MEASURE_DATE <= firstDispDate + weeks(64), 1, 0),
+    measBetween64_72 = ifelse(MEASURE_DATE > firstDispDate + weeks(64) & MEASURE_DATE <= firstDispDate + weeks(72), 1, 0)
+  )
+  
+
+
+disp_enroll_vitals7 %>% select(STUDY_ID, MEASURE_DATE, firstDispDate, measBetweenN8_0, measBetween0_8:measBetween64_72)
+```
+
+## See who has more than one meas per time window
+```{r}
+df_temp = disp_enroll_vitals7 %>% select(STUDY_ID, MEASURE_DATE, firstDispDate, measBetweenN8_0, measBetween0_8:measBetween64_72)
+
+windowCount = df_temp %>% group_by(STUDY_ID) %>% 
+  summarise_at(vars(measBetweenN8_0:measBetween64_72), funs(sum)); windowCount
+
+
+# 2403 distinct patients have at least one time window with 2+ measurements
+windowCount %>% filter(measBetweenN8_0 > 1 | measBetween0_8 > 1| measBetween8_16 > 1| measBetween16_24 > 1| measBetween24_32 > 1| measBetween32_40 > 1| 
+                         measBetween40_48 > 1| measBetween48_56 > 1| measBetween56_64 > 1| measBetween64_72 > 1)
+```
+## (Attempting to) Choose one random weight per window for patients with 2+ wts per window
+```{r}
+disp_enroll_vitals7 %>% group_by(STUDY_ID) %>% 
+```
+

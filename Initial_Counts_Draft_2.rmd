@@ -1,0 +1,427 @@
+---
+title: "Initial_Counts_Draft_2"
+output: html_document
+---
+
+This is a new draft in which I will merge HP and EHR data with the VITALS table earlier on, so that there are not conflicting "First Dispense Dates" per patient STUDY_ID. 
+
+The outline/gameplan for what to filter and merge and when:
+
+##Read in: 
+
+* dispensing table
+* hp_dispensing table
+
+
+## From dispensing tables:
+
+* filter only the NDC codes for GLP1a
+
+### JOIN EHR AND HP DISPENSING DATA
+
+
+## Read in:
+
+* enrollment table
+* hp_enrollment table
+
+
+## From enrollment tables:
+
+* convert ENR_START_DATE and ENR_END_DATE to dates
+
+### JOIN EHR AND HP ENROLLMENT DATA
+
+
+## JOIN DISPENSING AND ENROLLMENT DATA 
+
+## JOIN DF WITH VITALS
+
+* convert DISPENSE_DATE and MEASURE_DATE to dates
+
+Then,
+
+* Calculate difference in weeks between ENR_START_DATE and ENR_END_DATE to get totalEnrollWeeks
+* Find first dispense date per patient
+* Calculate difference in weeks between firstDispDate and ENR_END_DATE to get firstDispToEnrollEnd
+* Filter only observations who have 68+ weeks for firstDispToEnrollEnd
+* Create variable for 68 weeks elapsed from firstDispDate, call it firstDispPlus68
+
+## JOIN DF WITH VITALS
+
+```{r setup, include=FALSE, warning = F, message = F}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+library(readr)
+library(lubridate)
+library(magrittr)
+```
+
+## Reading in dispensing and hp_dispensing
+```{r warning = F, message = F}
+dispensing <- readr::read_csv("PATH_JING_LUO_DISPENSING_2020_03_31.csv")
+hp_dispensing <- readr::read_csv("PATH_JING_LUO_HP_DISPENSING_2020_03_31.csv")
+
+nrow(hp_dispensing)
+nrow(dispensing)
+```
+
+```{r}
+dispensing$NDC <- dispensing$NDC %>% as.character()
+
+hp_dispensing$NDC <- hp_dispensing$NDC %>% as.character()
+```
+
+
+## Filtering only patients dispensed a GLP-1 agonist
+```{r}
+glp1a <- c(00169406012, 00169406013, 00169406090, 00169406097, 00169406098, 00169406099, 50090450300, 00169413211, 00169413212, 00169413290, 00169413297, 70518214300, 00169413602, 00169413611, 00169431401, 00169431413, 00169430301, 00169430313, 00169430390, 00169430393, 00169430701, 00169430713, 00310652004, 66780022601, 00310653001, 00310653004, 00310653085, 00310654001, 00310654004, 00310654085, 
+00310651201, 00310651285, 00310652401, 00002143301, 00002143361, 00002143380, 
+50090348400, 00002143401, 00002143461, 00002143480, 50090348300, 00024574101, 00024574000, 00024574702, 00024574502, 00173086701, 00173086702, 00173086735, 00173086761, 00173086601, 00173086602, 00173086635, 00173086661, 00597015207, 00597015230, 00597015237, 00597015270, 00597015290, 50090449200, 55154041108, 70518198600, 00597015307, 00597015330, 00597015337, 00597015370, 00597015390, 50090438400, 55154041208, 71610017709, 71610017715, 71610017730, 50458014001, 50458014010, 50458014030, 50458014050, 50458014090, 55154142508, 50090436400, 50458014101, 50458014110, 50458014130, 50458014150, 50458014190, 55154142608,
+00310621030, 00310621095, 50090348100, 55154693308, 00310620530, 00310620595, 50090348200, 55154693208, 00006536403, 00006536406, 00006536407, 00006536408, 00006536409, 00006536303, 00006536306, 00006536307, 00006536308, 00006536309, 00006536310, 00169291115, 00169291190, 00169291197, 00024576105, 00024576302,
+50458054360, 50458054391, 50458054260, 50458054291, 50458054160, 50458054191, 50458054060, 50458054091, 50458094101, 50458094102, 50458094001, 50458094002, 50458094301, 50458094302, 50458094201, 50458094202, 00310628030, 00310628095, 00310627030, 00310627095, 00310622560, 00310622594, 00310626030, 00310626060, 00310626094, 00310626095, 00310625030, 00310625095, 00310677030, 00310677095, 00310678030, 00310678095, 00597018203, 00597018207, 00597018230, 00597018239, 00597018270, 00597018290, 70518204600, 00597016407, 00597016430, 00597016439, 00597016470, 00597016490, 00597016818, 00597016860, 00597016866, 00597018018, 00597018060, 00597018066, 00597015918, 00597015960, 00597015966, 00597017518, 00597017560, 00597017566, 00597028036, 00597028073, 00597028090, 00597030020, 00597030045, 00597030093, 00597029561, 00597029578, 00597029588, 00597029020, 00597029059, 00597029074, 00006537303, 00006537306, 00006537307, 00006537308, 00006537309, 00006536903, 00006536906, 00006536907, 00006537403, 00006537406, 00006537407, 00006537408, 00006537409, 00006537003, 00006537006, 00006537007,
+00006536803, 00006536806, 00006536807, 00006536808, 00006536809, 00006536703, 00006536706, 00006536707, 00006536708, 00006536709) %>% as.character()
+
+
+
+filter(hp_dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+       
+filter(dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+
+
+hp_dispensing <- filter(hp_dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+dispensing <- filter(dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+```
+
+
+## Select only relevant dispensing variables
+```{r}
+dispensing <- dispensing %>% select(STUDY_ID, DISPENSE_DATE)
+hp_dispensing <- hp_dispensing %>% select(STUDY_ID, DISPENSE_DATE)
+```
+
+
+## Compare dispense dates per STUDY_ID
+```{r}
+dispensing %>% distinct(STUDY_ID)
+hp_dispensing %>% distinct(STUDY_ID)
+```
+
+
+
+```{r}
+
+
+
+intersect(dispensing %>% distinct(STUDY_ID), hp_dispensing %>% distinct(STUDY_ID))
+
+
+intersect(dispensing, hp_dispensing)
+
+
+
+
+```
+
+
+
+
+
+
+## Combine EHR and HP dispensing tables
+```{r}
+all_dispense <- bind_rows(dispensing, hp_dispensing)
+```
+
+## Reading in enrollment and hp_enrollment
+```{r warning = F, message = F}
+enroll <- read_csv("PATH_JING_LUO_ENROLLMENT_2020_03_31.csv")
+hp_enroll <- read_csv("PATH_JING_LUO_HP_ENROLLMENT_2020_03_31.csv")
+```
+
+Convert character to date for `ENR_START_DATE` and `ENR_END_DATE`
+```{r}
+enroll$ENR_START_DATE <- as.Date(enroll$ENR_START_DATE, "%m/%d/%Y")
+enroll$ENR_END_DATE <- as.Date(enroll$ENR_END_DATE, "%m/%d/%Y")
+
+hp_enroll$ENR_START_DATE <- as.Date(hp_enroll$ENR_START_DATE, "%m/%d/%Y")
+hp_enroll$ENR_END_DATE <- as.Date(hp_enroll$ENR_END_DATE, "%m/%d/%Y")
+```
+
+### Both the EHR and HP data have unique enrollment time frames per unique patient.
+```{r}
+enroll %>% arrange(STUDY_ID)
+enroll %>% distinct(STUDY_ID)
+
+hp_enroll %>% arrange(STUDY_ID)
+hp_enroll %>% distinct(STUDY_ID)
+```
+### The intersection between EHR and HP enrollment data
+```{r}
+intersect(enroll, hp_enroll) %>% nrow()
+
+intersect(enroll$STUDY_ID, hp_enroll$STUDY_ID) %>% data.frame() %>% nrow()
+```
+There are only 7 observations that have identical STUDY_IDs and enrollment dates between EHR and HP.
+Meanwhile, there are 14,040 overlapping STUDY_IDs for the EHR and HP enrollment tables.
+
+Since there are 14,040 distinct STUDY_IDs in HP and 14,597 distinct STUDY_IDs in EHR, we can assume that all of the STUDY_IDs in HP are also in EHR. 
+
+Thus, we will only use the EHR data for enrollment start and end. 
+
+
+
+
+######################### poking around #########################
+
+<!-- ## Combine EHR and HP enrollment tables & select only relevant variables -->
+<!-- ```{r} -->
+<!-- all_enroll <- bind_rows(enroll, hp_enroll) %>% select(STUDY_ID, ENR_START_DATE, ENR_END_DATE) %>% arrange(STUDY_ID) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- all_enroll %>% distinct(STUDY_ID)  -->
+<!-- all_enroll %>% group_by(STUDY_ID) %>% distinct(ENR_START_DATE)  -->
+
+<!-- all_enroll %>% group_by(STUDY_ID) %>% distinct(ENR_END_DATE)  -->
+<!-- ``` -->
+<!-- Some patients have multiple ENR_START_DATEs and ENR_END_DATEs. -->
+
+# section where I tried to see explore whether to use EHR and/or HP and the overlaps between the enrollment and dispensing per both
+# in 3rd draft, I decide to omit this part and just use HP dispensing data and the largest overall timeframe for enrollment (irregardless if start and end dates are from EHR or  HP)
+
+```{r warning = F message = F}
+# comparing STUDY_ID between EHR dispensing and enrollment
+
+
+print("EHR: distinct patients with dispense info")
+dispensing %>% distinct(STUDY_ID) %>% nrow()
+
+print("EHR: distinct patients with enrollment info")
+enroll %>% distinct(STUDY_ID) %>% nrow() 
+
+print("EHR: distinct patients with BOTH dispense and enroll info")
+EHR_complete <- inner_join(dispensing, enroll) 
+EHR_complete %>% distinct(STUDY_ID) %>% nrow()
+
+
+
+# comparing STUDY_ID between HP dispensing and enrollment
+
+print("HP: distinct patients with dispense info")
+hp_dispensing %>% distinct(STUDY_ID) %>% nrow()
+
+print("HP: distinct patients with enrollment info")
+hp_enroll %>% distinct(STUDY_ID) %>% nrow() 
+
+print("HP: distinct patients with BOTH dispense and enroll info")
+HP_complete <- inner_join(hp_dispensing, hp_enroll) 
+HP_complete %>% distinct(STUDY_ID) %>% nrow()
+
+
+
+print("Distinct patients across EHR and HP with both dispense and enroll info")
+bind_rows(EHR_complete, HP_complete) %>% distinct(STUDY_ID) %>% nrow()
+
+
+print("overlapping patients with dispense info between EHR and HP")
+intersect(dispensing %>% distinct(STUDY_ID), hp_dispensing %>% distinct(STUDY_ID))%>% nrow()
+
+
+print("overlapping aptients with enroll info between EHR and HP")
+intersect(enroll %>% distinct(STUDY_ID), hp_enroll %>% distinct(STUDY_ID))%>% nrow()
+
+
+
+```
+
+
+
+## Studying the intersection between complete EHR and complete HP patients
+(complete = has both dispensing and enrollment info)
+## first, select only relevant variables from the complete EHR and complete HP datasets
+```{r}
+EHR_complete <- EHR_complete %>% select(STUDY_ID, DISPENSE_DATE, ENR_START_DATE, ENR_END_DATE)
+HP_complete <- HP_complete %>% select(STUDY_ID, DISPENSE_DATE, ENR_START_DATE, ENR_END_DATE)
+```
+
+
+## a series of important questions
+```{r}
+# How many overlapping patients are there between EHR and HP?
+intersect(EHR_complete$STUDY_ID, HP_complete$STUDY_ID) %>% data.frame() %>% nrow()    #817
+
+
+# Of the 817 overlapping patients, how many share the same dispense date?
+intersect(EHR_complete %>% select(STUDY_ID, DISPENSE_DATE), HP_complete %>% select(STUDY_ID, DISPENSE_DATE))   #754
+
+# Of the 817 overlapping patients, how many share the same enrollment start date?
+
+intersect(EHR_complete %>% select(STUDY_ID, ENR_START_DATE), HP_complete %>% select(STUDY_ID, ENR_START_DATE))    #11
+
+# Of the 817 overlapping patients, how many share the same enrollment end date?
+
+intersect(EHR_complete %>% select(STUDY_ID, ENR_END_DATE), HP_complete %>% select(STUDY_ID, ENR_END_DATE))    #9
+
+
+# Of the 817 overlapping patients, how many share the same enrollment START AND END date?
+
+intersect(EHR_complete %>% select(STUDY_ID, ENR_START_DATE, ENR_END_DATE), HP_complete %>% select(STUDY_ID, ENR_START_DATE, ENR_END_DATE))    #0
+
+```
+
+## Join dispensing and enrollment data
+```{r}
+all_complete <- bind_rows(EHR_complete, HP_complete)
+
+all_complete %>% distinct(STUDY_ID)
+```
+## Remove the 817 overlapping patients
+```{r}
+overlap <- intersect(EHR_complete$STUDY_ID, HP_complete$STUDY_ID)         # identifying the study_ids that appear in both EHR and HP
+
+overlap_df <- filter(all_complete, grepl(paste(overlap, collapse = "|"), STUDY_ID))         # putting all the overlapping study_id rows in a df
+ 
+all_complete2 <- setdiff(all_complete, overlap_df)            # making sure all_complete2 is devoid of the overlapped rows
+```
+
+
+# checking my math
+```{r}
+nrow(EHR_complete)     #5,832
+nrow(HP_complete)           #164,884
+nrow(all_complete)           #170,716
+
+
+# 5,832 + 164,884 = 170,716
+# good, binding rows just stacks all the rows on top
+
+
+EHR_complete %>% distinct(STUDY_ID) %>% nrow()     # 951
+HP_complete %>% distinct(STUDY_ID) %>% nrow()     # 11,050
+all_complete %>% distinct(STUDY_ID) %>% nrow()     # 11,184
+
+# 951 + 11,050  = 12,001
+# 12,001 - 817 = 11,184
+# makes sense, since there are 817 overlapping STUDY_IDs between EHR and HP
+
+nrow(all_complete)      #170,716
+nrow(overlap_df)      #29,393
+nrow(all_complete2)    #137,392
+
+############### check these numbers ####################
+
+
+all_complete %>% distinct(STUDY_ID)%>% nrow()  #11,184
+overlap_df %>% distinct(STUDY_ID)%>% nrow()     #817
+all_complete2 %>% distinct(STUDY_ID)%>% nrow()   #10,367
+
+# 11,184 - 817 = 10,367
+# makes sense, removed 817 overlapping STUDY_ID
+```
+
+
+
+############# stopped here ###############
+below code has not been updated
+
+
+
+
+
+
+
+
+
+
+
+<!-- ## join by STUDY_ID of dispensing data, since this is filtered by only patients with glp1a dispensement -->
+
+<!-- ```{r} -->
+<!-- df <- left_join(all_dispense, enroll)  -->
+<!-- df %>% distinct(STUDY_ID) -->
+<!-- ``` -->
+<!-- We have 11,194 distinct patients who were administered a GLP1a and have enrollment information. -->
+
+
+## Read in vital table
+```{r warning = F, message = F}
+vitals_original <- read_csv("PATH_JING_LUO_VITAL_2020_03_31.csv")
+```
+ 
+## select only relevant vitals
+```{r}
+vitals <- vitals_original %>% select(STUDY_ID, MEASURE_DATE, WT, ORIGINAL_BMI)
+```
+
+## Join df with vitals
+```{r}
+df0 <- left_join(df, vitals) 
+
+
+# convert to dates & drop rows with NA Weight
+df0 <- df0 %>% mutate(
+  DISPENSE_DATE = as.Date(DISPENSE_DATE, "%m/%d/%Y"),
+  MEASURE_DATE = as.Date(MEASURE_DATE, "%m/%d/%Y")
+) %>% drop_na(WT)
+```
+
+## calculate difference in weeks between ENR_START_DATE and ENR_END_DATE to get enrollWeeks
+```{r}
+df0$enrollWeeks <- difftime(df0$ENR_END_DATE, df0$ENR_START_DATE, units = "weeks") %>% as.numeric()
+
+df0 %>% group_by(STUDY_ID) %>% distinct(enrollWeeks)
+df0 %>% distinct(STUDY_ID)
+```
+Thee are 11,142 distinct patients in df0 and 11,142 distinct enrollment time frames.
+This indicates that each unique patient has a unique enrollment time frame, as they should. 
+
+
+## Another problem: dispense dates that occur earlier than ENR_START_DATE and later than ENR_END_DATE
+```{r}
+a <- df0 %>% filter(DISPENSE_DATE < ENR_START_DATE) %>% distinct(STUDY_ID) ## 476
+
+b <- df0 %>% filter(DISPENSE_DATE > ENR_END_DATE) %>% distinct(STUDY_ID) ## 870
+
+intersect(a, b)
+```
+
+
+## trying this method with toy data
+```{r}
+# Create variable "firstDispDate" that is unique per STUDY_ID
+
+# METHOD 1: group_by, summarise, left_join
+test <- df0[c(1, 13, 17, 33, 118, 2892, 2893),]
+firstDateTest <- test %>% group_by(STUDY_ID) %>% summarise(firstDispDate = min(DISPENSE_DATE))
+test0 <- left_join(test, firstDateTest) %>% arrange(STUDY_ID)
+
+# METHOD 2: mutate
+
+test1 <- test %>% group_by(STUDY_ID) %>%mutate(firstDispDate = min(DISPENSE_DATE)) %>% arrange(STUDY_ID)
+
+
+# they give the same result
+intersect(test0, test1)
+```
+
+
+### Creating a column for the first dispense date per patient
+```{r}
+
+# which method should i use????
+# first method
+df1 <- df0 %>% group_by(STUDY_ID) %>% mutate(firstDispDate = min(DISPENSE_DATE))
+
+# second method
+firstDate1 <- df0 %>% group_by(STUDY_ID) %>% summarise(firstDispDate = min(DISPENSE_DATE))
+dftest0 <- left_join(df0, firstDate1) 
+
+
+
+#### june 4 problem: why are they not intersecting perfectly i.e. why are they not the same
+
+intersect(df1, dftest0)
+```
+

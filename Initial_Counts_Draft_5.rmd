@@ -1,0 +1,884 @@
+---
+title: "Initial_Counts_Draft_5"
+author: "Ingrid Shu"
+date: "7/5/2021"
+output: html_document
+---
+
+# This draft will be similar to the previous draft (4) except:
+
+- will include BMI
+- will include only hp_dispensing
+- count C "backward": # of days between first measurement before first dispense date & first dispense date
+- count of unique patients with valid body weights -30, -60, and- 90 to +14 days of first dispense date, enrollment start date to +14 days
+
+
+
+```{r setup, include=FALSE, warning = F, message = F}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+library(readr)
+library(lubridate)
+library(magrittr)
+```
+
+## Reading in dispensing and hp_dispensing
+```{r warning = F, message = F}
+hp_dispensing <- readr::read_csv("Excel_Data/PATH_JING_LUO_HP_DISPENSING_2020_03_31.csv")
+```
+
+```{r}
+hp_dispensing %>% distinct(STUDY_ID)
+```
+
+13701 distinct STUDY_ID for HP dispensing.
+
+
+## Filtering only patients dispensed a GLP-1 agonist (no SGLT2's!!)
+```{r}
+hp_dispensing$NDC <- hp_dispensing$NDC %>% as.character()
+
+glp1a <- c(00169406012, 00169406013, 00169406090, 00169406097, 00169406098, 00169406099, 50090450300, 00169413211, 00169413212, 00169413290, 00169413297, 70518214300, 00169413602, 00169413611, 00169431401, 00169431413, 00169430301, 00169430313, 00169430390, 00169430393, 00169430701, 00169430713, 00310652004, 66780022601, 00310653001, 00310653004, 00310653085, 00310654001, 00310654004, 00310654085, 
+00310651201, 00310651285, 00310652401, 00002143301, 00002143361, 00002143380, 
+50090348400, 00002143401, 00002143461, 00002143480, 50090348300, 00024574101, 00024574000, 00024574702, 00024574502, 00173086701, 00173086702, 00173086735, 00173086761, 00173086601, 00173086602, 00173086635, 00173086661) %>% as.character()
+
+
+
+filter(hp_dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+       
+
+hp_dispensing <- filter(hp_dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+```
+
+```{r}
+hp_dispensing %>% distinct(STUDY_ID)
+```
+
+7006 distinct patients from HP with GLP1a dispensing.
+
+## Make a column for GLP1a drug name
+```{r}
+lira = c(00169406012, 00169406013, 00169406090, 00169406097, 00169406098, 00169406099, 50090450300) %>% as.character()
+sema_inject = c(00169413211, 00169413212, 00169413290, 00169413297, 70518214300, 00169413602, 00169413611) %>% as.character()
+sema_oral = c(00169431401, 00169431413, 00169430301, 00169430313, 00169430390, 00169430393, 00169430701, 00169430713) %>% as.character()
+exenatide_ER = c(00310652004, 66780022601, 00310653001, 00310653004, 00310653085, 00310654001, 00310654004, 00310654085) %>% as.character()
+exenatide = c(00310651201, 00310651285, 00310652401) %>% as.character()
+dula = c(00002143301, 00002143361, 00002143380, 50090348400, 00002143401,00002143461, 00002143480, 50090348300) %>% as.character()
+lixisenatide = c(00024574101, 00024574000, 00024574702, 00024574502) %>% as.character()
+albiglutide = c(00173086701, 00173086702, 00173086735, 00173086761, 00173086601, 00173086602, 00173086635, 00173086661) %>% as.character()
+```
+
+#### str_pad(lira, 11, pad = "0") is to make sure leading zeros are kept
+```{r}
+hp_dispensing <- hp_dispensing %>% mutate(drug = ifelse(NDC %in% str_pad(lira, 11, pad = "0"), "Liraglutide",  
+                                                        ifelse(NDC %in% str_pad(sema_inject, 11, pad = "0"), "Sema_inject",
+                                                                ifelse(NDC %in% str_pad(sema_oral, 11, pad = "0"), "Sema_oral",
+                                                                       ifelse(NDC %in% str_pad(exenatide_ER, 11, pad = "0"), "Exenatide_ER",
+                                                                              ifelse(NDC %in% str_pad(exenatide, 11, pad = "0"), "Exenatide",
+                                                                                     ifelse(NDC %in% str_pad(dula, 11, pad = "0"), "Dulaglutide",
+                                                                                            ifelse(NDC %in% str_pad(lixisenatide, 11, pad = "0"), "Lixisenatide",
+                                                                                                   ifelse(NDC %in% str_pad(albiglutide, 11, pad = "0"), "Albiglutide", "none"
+                                                                                                                                                      )))))))))
+```
+
+
+
+## Select only relevant dispensing variables
+```{r}
+hp_dispensing <- hp_dispensing %>% select(STUDY_ID, DISPENSE_DATE, drug)
+```
+
+## Keep only unique hp_dispensing observations
+```{r}
+hp_dispensing <- unique(hp_dispensing)
+```
+
+```{r}
+
+hp_dispensing %>% distinct(STUDY_ID)
+
+```
+Same as before, 7006 distinct patients dispensed a GLP1a.
+
+## Convert DISPENSE_DATE to date
+```{r}
+hp_dispensing$DISPENSE_DATE <- as.Date(hp_dispensing$DISPENSE_DATE, "%m/%d/%Y")
+```
+
+
+
+## Reading in EHR enrollment  
+## we will exclusively use EHR enrollment data, since vital table is from EHR
+```{r warning = F, message = F}
+enroll <- read_csv("Excel_Data/PATH_JING_LUO_ENROLLMENT_2020_03_31.csv")
+```
+
+```{r}
+enroll %>% distinct(STUDY_ID)
+```
+
+14597 distinct patients from EHR enroll.
+
+Convert character to date for `ENR_START_DATE` and `ENR_END_DATE`
+```{r}
+enroll$ENR_START_DATE <- as.Date(enroll$ENR_START_DATE, "%m/%d/%Y")
+enroll$ENR_END_DATE <- as.Date(enroll$ENR_END_DATE, "%m/%d/%Y")
+```
+
+## Select only relevant variables
+```{r}
+enroll <- enroll %>% select(STUDY_ID, ENR_START_DATE, ENR_END_DATE)
+```
+
+## Checking for duplicates
+```{r}
+sum(duplicated(enroll))
+```
+
+0 duplicates = GOOD
+
+## Joining enrollment table with HP dispensing table
+```{r}
+disp_and_enroll <- left_join(hp_dispensing, enroll)
+
+disp_and_enroll
+```
+## Checking for duplicates
+```{r}
+sum(duplicated(disp_and_enroll))
+```
+
+0 duplicates = GOOD
+
+```{r}
+disp_and_enroll %>% distinct(STUDY_ID)
+```
+
+7006 distinct patients dispensed a GLP1a and have enrollment information
+
+
+## Creating column for FIRST dispensement date per patient
+```{r}
+disp_and_enroll2 <- disp_and_enroll %>%
+  group_by(STUDY_ID) %>%
+  mutate(firstDispDate = min(DISPENSE_DATE)) %>%
+  arrange(STUDY_ID, DISPENSE_DATE) %>% 
+  select(STUDY_ID, DISPENSE_DATE, firstDispDate, ENR_START_DATE, ENR_END_DATE, drug)
+
+
+disp_and_enroll2
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+disp_and_enroll2[, c(1,3)] %>% distinct()
+```
+Good, each distinct patient has their own unique first dispense date.
+
+
+## Examining firstDispDates that fall outside of the enrollment time range
+```{r}
+disp_and_enroll2 %>% filter(firstDispDate < ENR_START_DATE)
+
+disp_and_enroll2 %>% filter(firstDispDate > ENR_END_DATE)
+```
+```{r}
+disp_and_enroll2 %>% filter(firstDispDate < ENR_START_DATE) %>% 
+  group_by(STUDY_ID) %>% 
+  summarise(firstDispBeforeENRStart = difftime(ENR_START_DATE, firstDispDate, units = "days")) %>% 
+  unique () %>% 
+  ggplot(aes(x = firstDispBeforeENRStart)) + 
+  geom_histogram(bins = 50, color = "black", fill = "white") + 
+  labs(x = "Days between firstDispDate and ENR_START_DATE", 
+       title = "Patients with firstDispDate before their ENR_START")
+
+
+
+
+disp_and_enroll2 %>% filter(firstDispDate < ENR_START_DATE) %>% 
+  group_by(STUDY_ID) %>% 
+  summarise(firstDispBeforeENRStart = difftime(ENR_START_DATE, firstDispDate, units = "days") %>% as.numeric()) %>% 
+  unique () %>% 
+  summary(firstDispBeforeENRStart)
+
+```
+```{r}
+disp_and_enroll2 %>% filter(firstDispDate > ENR_END_DATE) %>% 
+  group_by(STUDY_ID) %>% 
+  summarise(firstDispAfterENREnd = difftime(firstDispDate, ENR_END_DATE, units = "days")) %>%
+  unique() %>% 
+  ggplot(aes(x = firstDispAfterENREnd)) + 
+  geom_histogram(bins = 50, color = "black", fill = "white") + 
+  labs(x = "Days between ENR_END_DATE and firstDispDate", 
+       title = "Patients with firstDispDate after their ENR_END")
+
+
+disp_and_enroll2 %>% filter(firstDispDate > ENR_END_DATE) %>% 
+  group_by(STUDY_ID) %>% 
+  summarise(firstDispAfterENREnd = difftime(firstDispDate, ENR_END_DATE, units = "days") %>% as.numeric()) %>%
+  unique() %>% 
+  summary(firstDispAfterENREnd)
+```
+
+
+## Create a column for 68 weeks after the first dispensement date
+```{r}
+disp_and_enroll2$firstDispPlus68W <- disp_and_enroll2$firstDispDate + weeks(68)
+
+disp_and_enroll2 %>% select(STUDY_ID, DISPENSE_DATE, firstDispDate, firstDispPlus68W, ENR_START_DATE, ENR_END_DATE, drug)
+```
+
+# Now create the following time frames:
+
+* -30 days of firstDispDate
+
+* -60 days of firstDispDate
+
+* -90 days of firstDispDate
+
+* +14 days of firstDispDate
+
+* ENR_START_DATE (already have)
+
+```{r}
+disp_and_enroll3 <- disp_and_enroll2 %>% 
+  mutate(firstDispMinus30D = firstDispDate - days(30),
+         firstDispMinus60D = firstDispDate - days(60),
+         firstDispMinus90D = firstDispDate - days(90),
+         firstDispPlus14D = firstDispDate + days(14))
+```
+
+## Create a column for the number of weeks between first dispensement date and end of enrollment
+```{r}
+disp_and_enroll3$firstDispToEndW <- difftime(disp_and_enroll3$ENR_END_DATE, disp_and_enroll3$firstDispDate, units = "weeks") %>% as.numeric() 
+
+
+disp_and_enroll3
+```
+
+# Kind of peculiar...
+```{r}
+disp_and_enroll3 %>% filter(DISPENSE_DATE < ENR_START_DATE | DISPENSE_DATE > ENR_END_DATE)
+
+disp_and_enroll3 %>% filter(DISPENSE_DATE < ENR_START_DATE)      #dispense dates before enr_start
+disp_and_enroll3 %>% filter(DISPENSE_DATE > ENR_END_DATE)       #dispense dates after enr_end
+```
+
+While there are dispense dates that fall outside of the enrollment range, this doesn't affect us much since we are primarily using the firstDispDate per patient that occurs within the enrollment timeframe. 
+
+
+```{r}
+identical(disp_and_enroll3 %>% filter(DISPENSE_DATE < ENR_START_DATE) %>% select(STUDY_ID) %>% unique(), disp_and_enroll2 %>% filter(firstDispDate < ENR_START_DATE) %>% select(STUDY_ID) %>% unique())
+```
+The 238 distinct patients with DISPENSE_DATEs occurring before their ENR_START are the same patients with firstDispDates occurring before their ENR_START. 
+
+This issue is discussed further in the "July 9, 2021 Meeting" Word document. 
+For now I will carry on with keeping these firstDispDates despite some falling outside the enrollment timeframe. 
+
+
+## Filter so that only 72+ firstDispToEndW are included
+```{r}
+disp_and_enroll4 <- disp_and_enroll3 %>% filter(firstDispToEndW >= 72)
+
+disp_and_enroll4
+
+```
+4465 distinct patients dispensed GLP1a, have enrollment info, and have 72+ weeks between first dispense date and end of enrollment.
+
+## Read in vital table
+```{r warning = F, message = F}
+vitals_original <- read_csv("Excel_Data/PATH_JING_LUO_VITAL_2020_03_31.csv")
+```
+ 
+## select only relevant vitals
+```{r}
+vitals <- vitals_original %>% select(STUDY_ID, MEASURE_DATE, WT, ORIGINAL_BMI)
+```
+
+```{r}
+vitals %>% distinct(STUDY_ID)
+```
+14590 distinct patients with vital info. 
+
+```{r}
+intersect(vitals %>% distinct(STUDY_ID), disp_and_enroll4 %>% distinct(STUDY_ID))
+```
+
+4464 distinct patients overlap between rudimentary EHR vital table and HP-dispense-EHR-enrollment table
+
+### Convert MEASURE_DATE to a date
+```{r}
+vitals$MEASURE_DATE <- as.Date(vitals$MEASURE_DATE, "%m/%d/%Y")
+```
+
+
+## Make sure vitals table is devoid of duplicates across all 4 variables (will further trim down duplicates later)
+```{r}
+vitals2 <- unique(vitals)
+
+vitals2 %>% distinct(STUDY_ID)
+
+
+nrow(vitals)
+nrow(vitals2)   # got rid of 65565 duplicate rows
+```
+14590 distinct patients with vital info after a rudimentary duplicate removal.
+
+## Dealing with NA original_BMI and WT values
+```{r}
+sum(is.na(vitals2$WT))
+
+sum(is.na(vitals2$ORIGINAL_BMI))
+```
+
+### First, keep only patients that have both WT and ORIGINAL_BMI values
+```{r}
+vitals3 <- vitals2 %>% drop_na(WT, ORIGINAL_BMI)
+```
+
+```{r}
+sum(is.na(vitals3))
+```
+
+```{r}
+distinct(vitals3, STUDY_ID)
+```
+14528 distinct patients with complete vitals info (BMI, WT, and MEASURE_DATE).
+
+## Join disp_and_enroll4 with vitals3
+```{r}
+left_join(disp_and_enroll4, vitals3)
+```
+
+## Check out NA values
+```{r}
+colSums(is.na(left_join(disp_and_enroll4, vitals3)))
+```
+Since MEASURE_DATE, WT, and ORIGINAL_BMI are important for our study, we will perform an inner join instead so that each patient can have complete information.
+
+```{r}
+disp_enroll_vitals <- inner_join(disp_and_enroll4, vitals3)
+
+disp_enroll_vitals
+```
+
+## Check out NA values
+```{r}
+colSums(is.na(disp_enroll_vitals))
+```
+Good, everything is now complete.
+
+```{r}
+sum(duplicated(disp_enroll_vitals))
+```
+
+No duplicates.
+
+
+There are 4450 distinct patients with 
+- dispensed a GLP1a
+- have enrollment info
+- 72+ weeks between first dispensement and end of enrollment
+- have complete vital info (BMI & WT)
+
+
+## Flag unusual/potentially erroneous WTs and BMIs
+```{r}
+disp_enroll_vitals2 <- disp_enroll_vitals %>%
+  mutate(
+    below70WT = ifelse(WT < 70, 1, 0),
+    above700WT = ifelse(WT > 700, 1, 0),
+    below15BMI = ifelse(ORIGINAL_BMI < 15, 1, 0),
+    above90BMI = ifelse(ORIGINAL_BMI > 90, 1, 0)
+    )
+
+disp_enroll_vitals2
+
+```
+## Flag observations that have a MEASURE_DATE between weeks 0 - 68
+```{r}
+disp_enroll_vitals3 <- disp_enroll_vitals2 %>% mutate(
+  measBetween068 = ifelse(MEASURE_DATE >= firstDispDate & MEASURE_DATE <= firstDispPlus68W, 1, 0)
+)
+```
+
+```{r}
+disp_enroll_vitals3 %>% 
+  filter(measBetween068 == 1) %>% 
+  distinct(STUDY_ID)
+```
+There are 3957 distinct patients with 
+- dispensed a GLP1a
+- have enrollment info
+- 68+ weeks between first dispensement and end of enrollment
+- have complete vital info (BMI & WT)
+- at least one MEASURE_DATE between week 0 - 68
+
+
+
+## Now make variables for:
+
+* firstMeasDateAfterFirstDisp: first MEASURE_DATE that's after firstDispDate between week 0 to 68 (inclusive)
+
+* firstMeasDateBeforeFirstDisp: first MEASURE_DATE that's before firstDispDate and before enrollment start
+
+
+```{r}
+
+measBefore_df <- disp_enroll_vitals3 %>% 
+  filter(MEASURE_DATE < firstDispDate) %>%
+  mutate(firstMeasDateBeforeFirstDisp = max(MEASURE_DATE)) 
+
+measBefore_df %>% select(STUDY_ID, MEASURE_DATE, DISPENSE_DATE, firstDispDate, firstMeasDateBeforeFirstDisp) %>% arrange(STUDY_ID, MEASURE_DATE)
+
+
+measAfter_df <- disp_enroll_vitals3 %>% 
+  filter(measBetween068 ==1) %>% 
+  mutate(firstMeasDateAfterFirstDisp = min(MEASURE_DATE))
+
+measAfter_df %>% select(STUDY_ID, MEASURE_DATE, DISPENSE_DATE, firstDispDate, firstMeasDateAfterFirstDisp) %>% arrange(STUDY_ID, MEASURE_DATE)
+```
+
+* 3771 patients have a measure before firstDispDate
+
+* 3957 patients have a measure after firstDispDate
+
+
+
+
+
+### dispense_enroll_vitals4 to include both firstMeasDate variables
+```{r}
+t1 = measBefore_df %>% distinct(STUDY_ID, firstMeasDateBeforeFirstDisp)   #3771 distinct
+t2 = measAfter_df %>% distinct(STUDY_ID, firstMeasDateAfterFirstDisp)     #3957 distinct
+
+join_t1t2 = full_join(t1, t2, by = "STUDY_ID"); join_t1t2                 #4192 distinct
+
+
+disp_enroll_vitals4 = full_join(join_t1t2, disp_enroll_vitals3, by = "STUDY_ID") ; disp_enroll_vitals4    #4450 distinct
+colSums(is.na(disp_enroll_vitals4))
+
+disp_enroll_vitals4[is.na(disp_enroll_vitals4$firstMeasDateBeforeFirstDisp), ]  #679 patients missing firstMeasDateBefore    
+disp_enroll_vitals4[is.na(disp_enroll_vitals4$firstMeasDateAfterFirstDisp), ]   #493 patients missing firstMeasDateAfter
+```
+Out of the 4450 distinct patients (before filtering to only people with measures between week 0-68)
+* 679 patients missing firstMeasDateBefore    
+* 493 patients missing firstMeasDateAfter
+
+
+
+### Now see distribution for:
+
+* (A) number of days between firstMeasDateBeforeFirstDispDate and firstDispDate
+
+* (B) number of days between firstDispDate and firstMeasDateAfterFirstDispDate
+
+* (C) number of days between firstMeasDateBeforeFirstDispDate and firstMeasDateAfterFirstDispDate
+
+
+#### will create variables for each
+```{r}
+disp_enroll_vitals5 <- disp_enroll_vitals4 %>% 
+  mutate(
+    nDaysFMDBFDD_FDD = difftime(firstDispDate, firstMeasDateBeforeFirstDisp, units = "days") %>% as.numeric(),
+    nDaysFDD_FMDAFDD = difftime(firstMeasDateAfterFirstDisp, firstDispDate, units = "days") %>% as.numeric(),
+    nDaysFMDBFDD_FMDAFDD = difftime(firstMeasDateAfterFirstDisp, firstMeasDateBeforeFirstDisp, units = "days") %>% as.numeric()
+  )
+```
+
+
+
+```{r}
+#(A)
+ggplot(disp_enroll_vitals5 %>% distinct(STUDY_ID, nDaysFMDBFDD_FDD), aes(x = nDaysFMDBFDD_FDD)) + 
+  geom_histogram(bins = 50, color = "darkmagenta", fill = "white") + 
+  labs(title = "Number of days between \n earliest pre-firstDispDate MEASURE_DATE \n and firstDispDate", 
+       x = "days")
+
+summary(disp_enroll_vitals5$nDaysFMDBFDD_FDD)
+
+#(B)
+ggplot(disp_enroll_vitals5 %>% distinct(STUDY_ID, nDaysFDD_FMDAFDD), aes(x = nDaysFDD_FMDAFDD)) + 
+  geom_histogram(bins = 50, color = "darkblue", fill = "white") + 
+  labs(title = "Number of days between \n firstDispDate \n and first MEASURE_DATE \n between weeks 0-68", 
+       x = "days")
+
+summary(disp_enroll_vitals5$nDaysFDD_FMDAFDD)
+
+#(C)
+ggplot(disp_enroll_vitals5 %>% distinct(STUDY_ID, nDaysFMDBFDD_FMDAFDD), aes(x = nDaysFMDBFDD_FMDAFDD)) + 
+  geom_histogram(bins = 50, color = "darkgreen", fill = "white") + 
+  labs(title = "Number of days between \n earliest pre-firstDispDate MEASURE_DATE \n and first MEASURE_DATE \n between weeks 0-68", 
+       x = "days")
+
+summary(disp_enroll_vitals5$nDaysFMDBFDD_FMDAFDD)
+```
+
+All are very right skewed. 
+
+
+## Now we want:
+- count of unique patients with valid body weights -30, -60, and- 90 to +14 days of first dispense date, enrollment start date to +14 days
+- also count of patients with weights +- 14 days and +-3 days of firstDispDate
+
+
+
+## Make the following dummy variables:
+
+* measBetweenN30P14  (-30 to +14 days of firstDispDate, inclusive)
+
+* measBetweenN60P14  (-60 to +14 days of firstDispDate, inclusive)
+
+* measBetweenN90P14   (-90 to +14 days of firstDispDate, inclusive)
+
+* measBetweenENRSTP14  (ENR_START_DATE to +14 days of firstDispDate, inclusive)
+
+* measBetweenN14P14 (-14 to +14 days of firstDispDate, inclusive)
+
+* measBetweenN3P3 (-3 to +3 days of firstDispDate, inclusive)
+
+
+
+```{r}
+disp_enroll_vitals6 <-  disp_enroll_vitals5 %>% 
+  mutate(
+    measBetweenN30P14 = ifelse(MEASURE_DATE >= firstDispMinus30D & MEASURE_DATE <= firstDispPlus14D, 1, 0),
+    measBetweenN60P14 = ifelse(MEASURE_DATE >= firstDispMinus60D & MEASURE_DATE <= firstDispPlus14D, 1, 0),
+    measBetweenN90P14 = ifelse(MEASURE_DATE >= firstDispMinus90D & MEASURE_DATE <= firstDispPlus14D, 1, 0),
+    measBetweenENRSTP14 = ifelse(MEASURE_DATE >= ENR_START_DATE & MEASURE_DATE <= firstDispPlus14D, 1, 0),
+    measBetweenN14P14 = ifelse(MEASURE_DATE >= firstDispDate - days(14) & MEASURE_DATE <= firstDispPlus14D, 1, 0),
+    measBetweenN3P3 = ifelse(MEASURE_DATE >= firstDispDate - days(3) & MEASURE_DATE <= firstDispDate + days(3), 1, 0)
+  )
+```
+
+
+```{r}
+disp_enroll_vitals6 %>% filter(measBetweenN30P14 == 1)
+
+disp_enroll_vitals6 %>% filter(measBetweenN60P14 == 1)
+
+disp_enroll_vitals6 %>% filter(measBetweenN90P14 == 1)
+
+disp_enroll_vitals6 %>% filter(measBetweenENRSTP14 == 1)
+
+disp_enroll_vitals6 %>% filter(measBetweenN14P14 == 1)
+
+disp_enroll_vitals6 %>% filter(measBetweenN3P3 == 1)
+```
+* 2433 distinct patients who have a valid body weight measure between -30 and +14 days of firstDispDate
+
+* 2737 distinct patients who have a valid body weight measure between -60 and +14 days of firstDispDate
+
+* 2945 distinct patients who have a valid body weight measure between -90 and +14 days of firstDispDate
+
+* 3821 distinct patients who have a valid body weight measure between ENR_START and +14 days of firstDispDate
+
+* 2112 distinct patients who have a valid body weight measure between -14 and +14 days of firstDispDate
+
+* 1411 distinct patients who have a valid body weight measure between +-3 days of firstDispDate
+
+
+
+## Table of number of patients with firstDispDate in each year
+```{r}
+t1 = disp_enroll_vitals6 %>% select(STUDY_ID, firstDispDate) %>% distinct; t1
+
+
+min(t1$firstDispDate)
+max(t1$firstDispDate)
+
+
+t1.year = t1 %>% mutate(firstDispYear = year(firstDispDate)); t1.year
+
+min(t1.year$firstDispYear)
+max(t1.year$firstDispYear)
+
+
+table(t1.year$firstDispYear) %>% knitr::kable(col.names = c("Year", "Freq"), caption = "First Dispensement Years")
+```
+
+## How many patients have at least 1 measurement taken within one month of week 68? Have at least 1 measurement taken within 3 days of week 68?
+```{r}
+disp_enroll_vitals6 %>% filter(MEASURE_DATE >= firstDispPlus68W - months(1) & MEASURE_DATE <= firstDispPlus68W + months(1) )
+disp_enroll_vitals6 %>% filter(MEASURE_DATE >= firstDispPlus68W - days(3) & MEASURE_DATE <= firstDispPlus68W + days(3) )
+
+```
+
+## We will make a variable for lastMeasDate per patient:
+```{r}
+disp_enroll_vitals7 <- disp_enroll_vitals6 %>% 
+  group_by(STUDY_ID) %>% 
+  mutate(
+    lastMeasDate = max(MEASURE_DATE)
+  )
+
+
+
+# checks that created correctly
+disp_enroll_vitals7 %>% select(STUDY_ID, MEASURE_DATE, lastMeasDate) %>% arrange(STUDY_ID, MEASURE_DATE)
+disp_enroll_vitals7 %>% select(STUDY_ID, MEASURE_DATE, lastMeasDate) %>% arrange(STUDY_ID, MEASURE_DATE) %>% distinct(STUDY_ID, lastMeasDate)
+```
+
+
+
+
+
+
+
+## Some STUDY_ID and MEASURE_DATE pairings that have multiple different WT values
+```{r}
+disp_enroll_vitals7 %>% distinct(STUDY_ID, MEASURE_DATE, WT, ORIGINAL_BMI) %>% nrow()
+disp_enroll_vitals7 %>% distinct(STUDY_ID, MEASURE_DATE) %>% nrow()
+```
+
+
+
+```{r}
+setdiff(disp_enroll_vitals7 %>% select(STUDY_ID, MEASURE_DATE, WT) %>% distinct(STUDY_ID), disp_enroll_vitals7 %>% select(STUDY_ID, MEASURE_DATE) %>% distinct(STUDY_ID))
+```
+
+## Choosing one random weight & ORIGINAL_BMI per MEASURE_DATE for patients who have 2+ different WTs/BMIs per MEASURE_DATE
+```{r}
+
+disp_enroll_vitals8 <- disp_enroll_vitals7 %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(1) %>% group_by(STUDY_ID); disp_enroll_vitals8
+
+```
+
+
+
+
+
+# To see the specific rows with 2+ WT measures, we will temporarily drop DISPENSE_DATE and drug in a table called disp_enroll_vitals_A (to prevent repopulated/redundant rows)
+```{r}
+
+disp_enroll_vitals_A <- disp_enroll_vitals7 %>% select(-c(DISPENSE_DATE, drug)) %>% distinct(); disp_enroll_vitals_A
+
+
+disp_enroll_vitals_A %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(2) %>% ungroup() %>% group_by(STUDY_ID) # a check of number of differing measures
+
+disp_enroll_vitals_A %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(3) %>% ungroup() %>% group_by(STUDY_ID)# one MEASURE_DATE has 3 differing measures
+
+disp_enroll_vitals_A %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(4) %>% ungroup() %>% group_by(STUDY_ID)
+
+
+disp_enroll_vitals_B <- disp_enroll_vitals_A %>% group_by(STUDY_ID, MEASURE_DATE) %>% slice(1) %>% group_by(STUDY_ID); disp_enroll_vitals_B
+```
+* 651 distinct patients have at least 1 instance of 2 different weights per same MEASURE_DATE
+
+* 8 distinct patients have at least 1 instance of 3 different weights per same MEASURE_DATE
+
+## We will carry on with using disp_enroll_vitals8 which contains the 4450 patients, this time with only one unique wt per measure_date
+```{r}
+identical(disp_enroll_vitals8 %>% select(-c(DISPENSE_DATE, drug)), disp_enroll_vitals_B)
+```
+## Getting rid of DISPENSE_DATE column
+```{r}
+disp_enroll_vitals7 %>% distinct(STUDY_ID, DISPENSE_DATE)
+disp_enroll_vitals8 %>% distinct(STUDY_ID, DISPENSE_DATE)
+
+
+
+
+
+disp_enroll_vitals8 %>% filter(DISPENSE_DATE == firstDispDate) #table 8 when selecting one weight per STUDY_ID&MEASURE_DATE group has made it so all the DISPENSE_DATEs = firstDispDate. Not necessarily a problem, will allow us to drop the dispense_date column which was unused anyway. 
+
+identical(disp_enroll_vitals8, disp_enroll_vitals8 %>% filter(DISPENSE_DATE == firstDispDate)) # true
+
+
+
+disp_enroll_vitals9 <- disp_enroll_vitals8 %>% select(-DISPENSE_DATE)
+```
+
+
+## Checking that each MEASURE_DATE now has one distinct WT and BMI
+```{r}
+disp_enroll_vitals9 %>% distinct(STUDY_ID, MEASURE_DATE, WT, ORIGINAL_BMI) 
+
+disp_enroll_vitals9 %>% distinct(STUDY_ID, MEASURE_DATE)
+```
+## Proportion of potentially erroneous body weight measurements
+```{r}
+disp_enroll_vitals9 %>% filter(below70WT == 1 | above700WT ==1)
+```
+6275/143551 (4.37%) weights are potentially erroneous. 
+1276/4450 (27.67%) patients have at least one potentially erroneous measurement. 
+
+### potentially erroneous weights with only the 3957 patients
+```{r}
+disp_enroll_vitals9 %>% filter(measBetween068 == 1) %>% 
+  filter(below70WT == 1 | above700WT ==1)
+
+
+
+#denominator
+disp_enroll_vitals9 %>% filter(measBetween068 == 1) 
+```
+678/27228 (2.49%) weights are potentially erroneous. 
+254/3957 (6.41%) patients have at least one potentially erroneous measurement. 
+
+## Now we can make a body weight value histogram
+## Six-number-summary of body weight values
+(each patient contributes 1 body weight values PER measurement date they have. E.G: Patient A has 5 MEASURE_DATEs and thus will contribute 5 (same or different) weight values)
+```{r}
+# summary of all weights
+summary(disp_enroll_vitals9$WT)
+
+
+# now only counting weights between 70 & 700
+summary((disp_enroll_vitals9 %>% filter(below70WT == 0 & above700WT == 0))$WT)
+
+ggplot(disp_enroll_vitals9, aes(WT)) + 
+  geom_histogram(bins = 50, color = "blue", fill = "white") + 
+  labs(x = "Weight (lbs)", 
+       title = "Distribution of weight values")
+```
+### keep in mind that at this point, the 4450 isn't our "final" number since we have yet to filter to only include people with at least one measurement between weeks 0- 68.
+
+
+
+
+# Count B: Number of distinct MEASURE_DATEs per patient between weeks 0 -68
+
+# To note: the only variables that vary within one STUDY_ID are DISPENSE_DATE, drug, MEASURE_DATE, WT, ORIGINAL_BMI, and the unusual WT  + BMI markers
+i.e. one STUDY_ID can have multiple different values for the above variables
+```{r}
+# create df_b to make sure only distinct MEASURE_DATEs are counted per patient
+# also limit it to "between weeks 0 to 68"
+df_b <- disp_enroll_vitals9 %>% filter(measBetween068 == 1) %>% distinct(STUDY_ID, MEASURE_DATE) 
+```
+
+```{r}
+countB <- df_b %>% group_by(STUDY_ID) %>% summarise(nMeasure = sum(!is.na(MEASURE_DATE))) 
+
+countB
+```
+```{r}
+ggplot(countB, aes(x = nMeasure)) +
+  geom_histogram(color ="blue", fill = "white", bins = 50)+ 
+  scale_x_continuous()+ 
+  labs(x = "Number of distinct measurement dates",
+       title = "number of distinct measurement dates per patient",
+       subtitle = "between week 0 (week of first dispense) and week 68")
+
+ggplot(countB, aes(x = nMeasure)) +
+  geom_freqpoly(bins = 50)+
+  scale_x_continuous() +
+  labs(x = "Number of distinct measurement dates",
+       title = "number of distinct measurement dates per patient",
+       subtitle = "between week 0 (week of first dispense) and week 68")
+
+summary(countB$nMeasure)
+```
+
+
+# Now let's do the drug breakdown but only using the one drug per patient (the first GLP1a they were dispensed)
+```{r}
+# First, using the 6806:
+df_breakdown <- disp_enroll_vitals9 %>% select(STUDY_ID, drug) %>% unique()        # get rid of rows populating from varying MEASURE_DATEs and WTs
+
+
+df_breakdown %>% 
+	group_by(drug) %>% 
+	summarise(count = n()) %>% 
+	ggplot(aes(x = reorder(drug,(-count)), y = count)) + 
+		geom_bar(stat = 'identity', fill = "paleturquoise1", color = "black")  +
+  coord_flip() + 
+  labs(x = "Drug",
+       title = "Count of GLP1A Types")
+
+
+table(df_breakdown$drug) %>% knitr::kable(col.names = c("Drug", "Freq"))
+
+# Now only including the 6070:
+df_breakdown2 <-  disp_enroll_vitals9 %>% filter(measBetween068 == 1) %>% select(STUDY_ID, drug) %>% unique()
+df_breakdown2 %>% 
+	group_by(drug) %>% 
+	summarise(count = n()) %>% 
+	ggplot(aes(x = reorder(drug,(-count)), y = count)) + 
+		geom_bar(stat = 'identity', fill = "paleturquoise1", color = "black")  +
+  coord_flip() + 
+  labs(x = "Drug",
+       title = "Count of GLP1A Types")
+
+table(df_breakdown2$drug) %>% knitr::kable(col.names = c("Drug", "Freq"))
+```
+
+
+
+
+
+## Create variable for "# of weeks between firstDispDate and MEASURE_DATE"
+```{r}
+disp_enroll_vitals10 <- disp_enroll_vitals9 %>% mutate(
+  nWeeksFDD_MeasDate = difftime(MEASURE_DATE, firstDispDate, units = "weeks") %>% as.numeric()
+)
+
+
+disp_enroll_vitals10 %>% select(STUDY_ID, MEASURE_DATE, firstDispDate, nWeeksFDD_MeasDate)
+```
+Some values are negative as expected. Negative values correspond with MEASURE_DATEs that occured before firstDispDate.
+
+### when filtering for only MEASURE_DATEs between week 0 -68, we will expect only positive nWeeksFDD_MeasDate values
+```{r}
+disp_enroll_vitals10 %>% filter(measBetween068 == 1) %>% 
+  select(STUDY_ID, MEASURE_DATE, firstDispDate, nWeeksFDD_MeasDate)
+
+
+# df to only include measurements between weeks 0 - 68
+disp_enroll_vitals10_Week068 <- disp_enroll_vitals10 %>% filter(measBetween068 == 1); disp_enroll_vitals10_Week068
+```
+
+```{r}
+
+ggplot(disp_enroll_vitals10, aes(nWeeksFDD_MeasDate)) + 
+  geom_histogram(bins = 50, color = "navyblue", fill = "slategray1") + 
+  labs(
+    x = "Weeks",
+    title = "Number of weeks between firstDispDate and MEASURE_DATE"
+  )+ 
+  theme(plot.title = element_text(hjust = 0.5))
+
+summary(disp_enroll_vitals10$nWeeksFDD_MeasDate)
+
+
+ggplot(disp_enroll_vitals10_Week068, aes(nWeeksFDD_MeasDate)) + 
+  geom_histogram(bins = 50, color = "mediumvioletred", fill = "thistle1")+ 
+  labs(
+    x = "Weeks",
+    title = "Number of weeks between firstDispDate and MEASURE_DATE",
+    subtitle = "Only MEASURE_DATEs between week 0 - 68"
+  )+ 
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5))
+
+summary(disp_enroll_vitals10_Week068$nWeeksFDD_MeasDate)
+```
+
+
+## Print out of the weights (and time of each weight in weeks post-dispensing date) for each patient in our dataset
+```{r}
+# measures from all times
+disp_enroll_vitals10 %>% select(STUDY_ID, MEASURE_DATE, WT, nWeeksFDD_MeasDate) %>% arrange(STUDY_ID, MEASURE_DATE)
+
+# measures from only weeks 0-68
+disp_enroll_vitals10_Week068 %>% select(STUDY_ID, MEASURE_DATE, WT, nWeeksFDD_MeasDate) %>% arrange(STUDY_ID, MEASURE_DATE)
+
+# randomly choose 10 patients to look at:
+set.seed(86) 
+sample_IDs = sample(disp_enroll_vitals10$STUDY_ID, size = 10)
+
+disp_enroll_vitals10 %>% filter(STUDY_ID %in% sample_IDs) %>% 
+  filter(measBetween068 == 1) %>%
+  select(STUDY_ID, MEASURE_DATE, WT, nWeeksFDD_MeasDate) %>% 
+  arrange(STUDY_ID, MEASURE_DATE)
+```
+

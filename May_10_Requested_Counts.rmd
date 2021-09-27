@@ -1,0 +1,532 @@
+---
+title: 'GLP_1: May 10, 2021 Requested Counts'
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE, warning = F, message = F}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+library(readr)
+library(lubridate)
+library(magrittr)
+```
+
+## Reading in dispensing and hp_dispensing
+```{r warning = F, message = F}
+dispensing <- readr::read_csv("PATH_JING_LUO_DISPENSING_2020_03_31.csv")
+hp_dispensing <- readr::read_csv("PATH_JING_LUO_HP_DISPENSING_2020_03_31.csv")
+
+nrow(hp_dispensing)
+nrow(dispensing)
+
+```
+
+Original observation counts:
+EHR: 1,048,575
+HP: 2,829,475
+
+
+
+```{r}
+dispensing$NDC <- dispensing$NDC %>% as.character()
+
+hp_dispensing$NDC <- hp_dispensing$NDC %>% as.character()
+```
+
+
+## Filtering only patients dispensed a GLP-1 agonist
+```{r}
+glp1a <- c(00169406012, 00169406013, 00169406090, 00169406097, 00169406098, 00169406099, 50090450300, 00169413211, 00169413212, 00169413290, 00169413297, 70518214300, 00169413602, 00169413611, 00169431401, 00169431413, 00169430301, 00169430313, 00169430390, 00169430393, 00169430701, 00169430713, 00310652004, 66780022601, 00310653001, 00310653004, 00310653085, 00310654001, 00310654004, 00310654085, 
+00310651201, 00310651285, 00310652401, 00002143301, 00002143361, 00002143380, 
+50090348400, 00002143401, 00002143461, 00002143480, 50090348300, 00024574101, 00024574000, 00024574702, 00024574502, 00173086701, 00173086702, 00173086735, 00173086761, 00173086601, 00173086602, 00173086635, 00173086661, 00597015207, 00597015230, 00597015237, 00597015270, 00597015290, 50090449200, 55154041108, 70518198600, 00597015307, 00597015330, 00597015337, 00597015370, 00597015390, 50090438400, 55154041208, 71610017709, 71610017715, 71610017730, 50458014001, 50458014010, 50458014030, 50458014050, 50458014090, 55154142508, 50090436400, 50458014101, 50458014110, 50458014130, 50458014150, 50458014190, 55154142608,
+00310621030, 00310621095, 50090348100, 55154693308, 00310620530, 00310620595, 50090348200, 55154693208, 00006536403, 00006536406, 00006536407, 00006536408, 00006536409, 00006536303, 00006536306, 00006536307, 00006536308, 00006536309, 00006536310, 00169291115, 00169291190, 00169291197, 00024576105, 00024576302,
+50458054360, 50458054391, 50458054260, 50458054291, 50458054160, 50458054191, 50458054060, 50458054091, 50458094101, 50458094102, 50458094001, 50458094002, 50458094301, 50458094302, 50458094201, 50458094202, 00310628030, 00310628095, 00310627030, 00310627095, 00310622560, 00310622594, 00310626030, 00310626060, 00310626094, 00310626095, 00310625030, 00310625095, 00310677030, 00310677095, 00310678030, 00310678095, 00597018203, 00597018207, 00597018230, 00597018239, 00597018270, 00597018290, 70518204600, 00597016407, 00597016430, 00597016439, 00597016470, 00597016490, 00597016818, 00597016860, 00597016866, 00597018018, 00597018060, 00597018066, 00597015918, 00597015960, 00597015966, 00597017518, 00597017560, 00597017566, 00597028036, 00597028073, 00597028090, 00597030020, 00597030045, 00597030093, 00597029561, 00597029578, 00597029588, 00597029020, 00597029059, 00597029074, 00006537303, 00006537306, 00006537307, 00006537308, 00006537309, 00006536903, 00006536906, 00006536907, 00006537403, 00006537406, 00006537407, 00006537408, 00006537409, 00006537003, 00006537006, 00006537007,
+00006536803, 00006536806, 00006536807, 00006536808, 00006536809, 00006536703, 00006536706, 00006536707, 00006536708, 00006536709) %>% as.character()
+
+
+
+filter(hp_dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+       
+filter(dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+
+
+hp_dispensing <- filter(hp_dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+dispensing <- filter(dispensing, grepl(paste(glp1a, collapse = "|"), NDC))
+```
+It appears that `dispensing` does not follow the standardized 11 digit format, whereas `hp_dispensing` does. 
+
+```{r}
+nrow(hp_dispensing)
+nrow(dispensing)
+```
+Original observation counts:
+EHR: 5,832
+HP: 164,907
+
+Since the EHR dispensing data does not appear to follow the 11-digit NDC standardization, 5832 may be an under-count.
+
+```{r}
+glp1a_noZeros <- c(169406012, 169406013, 169406090, 169406097, 169406098, 169406099, 50090450300, 169413211, 169413212, 169413290, 169413297, 70518214300, 169413602, 169413611, 169431401, 169431413, 169430301, 169430313, 00169430390, 00169430393, 169430701, 169430713, 310652004, 66780022601, 310653001, 310653004, 310653085, 310654001, 310654004, 310654085, 
+310651201, 310651285, 310652401, 2143301, 2143361, 2143380, 
+50090348400, 2143401, 2143461, 2143480, 50090348300, 24574101, 24574000, 24574702, 24574502, 173086701, 173086702, 173086735, 173086761, 173086601, 173086602, 173086635, 173086661, 597015207, 597015230, 597015237, 597015270, 597015290, 50090449200, 55154041108, 70518198600, 597015307, 597015330, 597015337, 597015370, 597015390, 50090438400, 55154041208, 71610017709, 71610017715, 71610017730, 50458014001, 50458014010, 50458014030, 50458014050, 50458014090, 55154142508, 50090436400, 50458014101, 50458014110, 50458014130, 50458014150, 50458014190, 55154142608,
+310621030, 310621095, 50090348100, 55154693308, 310620530, 310620595, 50090348200, 55154693208, 6536403, 6536406, 6536407, 6536408, 6536409, 6536303, 6536306, 6536307, 6536308, 6536309, 6536310, 169291115, 169291190, 169291197, 24576105, 24576302,
+50458054360, 50458054391, 50458054260, 50458054291, 50458054160, 50458054191, 50458054060, 50458054091, 50458094101, 50458094102, 50458094001, 50458094002, 50458094301, 50458094302, 50458094201, 50458094202, 310628030, 310628095, 310627030, 310627095, 310622560, 310622594, 310626030, 310626060, 310626094, 310626095, 310625030, 310625095, 310677030, 310677095, 310678030, 310678095, 597018203, 597018207, 597018230, 597018239, 597018270, 597018290, 70518204600, 597016407, 597016430, 597016439, 597016470, 597016490, 597016818, 597016860, 597016866, 597018018, 597018060, 597018066, 597015918, 597015960, 597015966, 597017518, 597017560, 597017566, 597028036, 597028073, 597028090, 597030020, 597030045, 597030093, 597029561, 597029578, 597029588, 597029020, 597029059, 597029074, 6537303, 6537306, 6537307, 6537308, 6537309, 6536903, 6536906, 6536907, 6537403, 6537406, 6537407, 6537408, 6537409, 6537003, 6537006, 6537007,
+6536803, 6536806, 6536807, 6536808, 6536809, 6536703, 6536706, 6536707, 6536708, 6536709) %>% as.character()
+```
+
+```{r}
+filter(dispensing, grepl(paste(glp1a_noZeros, collapse = "|"), NDC)) %>% nrow()
+```
+Never mind, that was not an under-count.
+
+
+## Reading in enrollment and hp_enrollment
+```{r warning = F, message = F}
+enroll <- read_csv("PATH_JING_LUO_ENROLLMENT_2020_03_31.csv")
+hp_enroll <- read_csv("PATH_JING_LUO_HP_ENROLLMENT_2020_03_31.csv")
+```
+
+
+Convert character to date for `ENR_START_DATE` and `ENR_END_DATE`
+```{r}
+enroll$ENR_START_DATE <- as.Date(enroll$ENR_START_DATE, "%m/%d/%Y")
+enroll$ENR_END_DATE <- as.Date(enroll$ENR_END_DATE, "%m/%d/%Y")
+
+hp_enroll$ENR_START_DATE <- as.Date(hp_enroll$ENR_START_DATE, "%m/%d/%Y")
+hp_enroll$ENR_END_DATE <- as.Date(hp_enroll$ENR_END_DATE, "%m/%d/%Y")
+```
+
+
+Calculating difference in weeks between `ENR_START_DATE` and `ENR_END_DATE`
+```{r}
+enroll$enrollTotalWeeks <- difftime(enroll$ENR_END_DATE, enroll$ENR_START_DATE, units = "weeks") %>% as.numeric()
+
+
+
+hp_enroll$enrollTotalWeeks <- difftime(hp_enroll$ENR_END_DATE, hp_enroll$ENR_START_DATE, units = "weeks") %>% as.numeric()
+```
+
+## Joining the tables for dispensement and enrollment so that both only contain patients who were dispensed GLP-1 agonist
+```{r warning = F, message = F}
+df <- left_join(dispensing, enroll)
+
+hp_df <- left_join(hp_dispensing, hp_enroll)
+```
+
+Get rid of unused columns
+```{r}
+df0 <- df %>%
+  select(-c(PRESCRIBINGID, DISPENSE_DOSE_DISP, DISPENSE_DOSE_DISP_UNIT, RAW_DISPENSE_DOSE_DISP, RAW_DISPENSE_DOSE_DISP_UNIT, RAW_DISPENSE_ROUTE))
+
+hp_df0 <- hp_df %>%
+  select(-c(PRESCRIBINGID, DISPENSE_DOSE_DISP, DISPENSE_DOSE_DISP_UNIT, RAW_DISPENSE_DOSE_DISP, RAW_DISPENSE_DOSE_DISP_UNIT, RAW_DISPENSE_ROUTE))
+```
+
+Create variable `dispenseToEnrollEndWeeks` for number of weeks between all dispense dates to end of enrollment
+```{r}
+df0$DISPENSE_DATE <- as.Date(df0$DISPENSE_DATE, "%m/%d/%Y")
+hp_df0$DISPENSE_DATE <- as.Date(hp_df0$DISPENSE_DATE, "%m/%d/%Y")
+
+
+df0$dispenseToEnrollEndWeeks <- difftime(df0$ENR_END_DATE, df0$DISPENSE_DATE, units = "weeks") %>% as.numeric()
+hp_df0$dispenseToEnrollEndWeeks <- difftime(hp_df0$ENR_END_DATE, hp_df0$DISPENSE_DATE, units = "weeks") %>% as.numeric()
+```
+
+```{r}
+summary(df0$dispenseToEnrollEndWeeks)
+summary(hp_df0$dispenseToEnrollEndWeeks)
+```
+Negative numbers. WHAT
+
+## Distinct Patients Count
+```{r}
+df0 %>% distinct(STUDY_ID)
+hp_df0 %>% distinct(STUDY_ID)
+```
+EHR Data: 951 distinct patients dispensed glp1a
+HP Data: 11,060 distinct patients dispensed glp1a
+
+## Create column for the first dispense date per patient
+```{r message = F, warning = F}
+firstDispDate <- df0 %>% group_by(STUDY_ID) %>% summarise(firstDispDate = min(DISPENSE_DATE))
+df0 <- left_join(df0, firstDispDate) %>% arrange(STUDY_ID)
+df0
+
+
+hp_firstDispDate <- hp_df0 %>% group_by(STUDY_ID) %>% summarise(firstDispDate = min(DISPENSE_DATE))
+hp_df0 <- left_join(hp_df0, hp_firstDispDate) %>% arrange(STUDY_ID)
+hp_df0
+```
+
+## Select important variables to create a new df1
+```{r}
+df1 <- df0 %>% select(STUDY_ID, DISPENSE_DATE, firstDispDate, ENR_START_DATE, ENR_END_DATE, enrollTotalWeeks, dispenseToEnrollEndWeeks)
+
+hp_df1 <- hp_df0 %>% select(STUDY_ID, DISPENSE_DATE, firstDispDate, ENR_START_DATE, ENR_END_DATE, enrollTotalWeeks, dispenseToEnrollEndWeeks)
+```
+
+
+## Create column for number of weeks between first dispense date and end of enrollment date
+```{r}
+df1$firstDispToEnd <- difftime(df1$ENR_END_DATE, df1$firstDispDate, units = "weeks") %>% as.numeric()
+
+hp_df1$firstDispToEnd <- difftime(hp_df1$ENR_END_DATE, hp_df1$firstDispDate, units = "weeks") %>% as.numeric()
+```
+
+## making sure only including patients who have 68+ weeks between first dispense date and end of enrollment date
+```{r}
+df1 %>% filter(firstDispToEnd >= 68) %>% distinct(STUDY_ID)
+
+hp_df1 %>% filter(firstDispToEnd >= 68) %>% distinct(STUDY_ID)
+```
+
+EHR: 946
+HP: 6,259
+
+
+## Summary statistics of EHR # of weeks between first dispense date and end of enrollment date
+```{r}
+summary(df1$firstDispToEnd)
+```
+
+## Summary statistics of HP # of weeks between first dispense date and end of enrollment date
+```{r}
+summary(hp_df1$firstDispToEnd)
+```
+hm....is first dispense date after end of enrollment date allowed?
+
+
+
+## Separate into only observations who have 68+ weeks between first dispense date and end of enrollment date
+```{r}
+df2 <- df1 %>% filter(firstDispToEnd >= 68)
+hp_df2 <- hp_df1 %>% filter(firstDispToEnd >= 68)
+```
+
+```{r}
+summary(df2$firstDispToEnd)
+summary(hp_df2$firstDispToEnd)
+```
+Now we only have observations with 68+ weeks between first dispense date and end enrollment date. 
+
+## Reading in the vitals table which contains body weight (only available for EHR, no HP)
+
+**edit for May 31: joining in the HP data that have valid VITALS table**
+```{r warning = F, message = F}
+vitals_original <- read_csv("PATH_JING_LUO_VITAL_2020_03_31.csv")
+```
+
+## Only selecting relevant variables
+```{r}
+vitals <- vitals_original %>% select(STUDY_ID, MEASURE_DATE, WT, ORIGINAL_BMI)
+```
+
+## Join df2 and vitals
+```{r message = F, warning = F}
+df3 <- left_join(df2, vitals) %>% 
+  mutate(MEASURE_DATE = as.Date(MEASURE_DATE, "%m/%d/%Y")) 
+
+hp_df3 <- left_join(hp_df2, vitals) %>%
+    mutate(MEASURE_DATE = as.Date(MEASURE_DATE, "%m/%d/%Y")) 
+```
+
+
+
+## Create column for 68 weeks elapsed from first dispensing date
+```{r}
+df3$firstDispPlus68 <- df3$firstDispDate + weeks(68)
+df3 <- df3 %>% select(STUDY_ID, MEASURE_DATE, WT, firstDispDate, firstDispPlus68, firstDispToEnd, DISPENSE_DATE, ENR_START_DATE, ENR_END_DATE, enrollTotalWeeks, dispenseToEnrollEndWeeks) %>%
+  arrange(STUDY_ID, MEASURE_DATE)
+
+hp_df3$firstDispPlus68 <- hp_df3$firstDispDate + weeks(68)
+hp_df3 <- hp_df3 %>% select(STUDY_ID, MEASURE_DATE, WT, firstDispDate, firstDispPlus68, firstDispToEnd, DISPENSE_DATE, ENR_START_DATE, ENR_END_DATE, enrollTotalWeeks, dispenseToEnrollEndWeeks) %>%
+  arrange(STUDY_ID, MEASURE_DATE)
+
+```
+
+
+## Finding number of body weight measurements per patient between week 0 and week 68
+```{r}
+countB <- df3 %>% group_by(STUDY_ID) %>%
+  filter(MEASURE_DATE >= firstDispDate & MEASURE_DATE <= firstDispPlus68) %>%
+  summarise(nWeight = sum(!is.na(WT)))
+
+ggplot(countB, aes(x = nWeight)) +
+  geom_histogram(color ="black", fill = "white", bins = 50)+ 
+  scale_x_continuous()+ 
+  labs(x = "Number of body weight measurements",
+       title = "Distribution of number of body weight measurements per patient",
+       subtitle = "between week 0 (week of first dispense) and week 68")
+
+ggplot(countB, aes(x = nWeight)) +
+  geom_freqpoly(bins = 50)+
+  scale_x_continuous() +
+    labs(x = "Number of body weight measurements",
+       title = "Frequency plot of number of body weight measurements per patient",
+       subtitle = "between week 0 (week of first dispense) and week 68")
+
+summary(countB$nWeight)
+```
+
+## There appear to be multiple body weight measurements on the same dates for the same patients, which is leading to unusually high numbers for body weight measurement count between week 0 and week 68 per patient. Therefore, we can disregard the plots above. 
+
+```{r}
+# including only measure dates between weeks 0 - 68
+# redefining df3 to only contain MEASURE_DATES between 0 - 68 weeks
+
+interval <- interval(df3$firstDispDate, df3$firstDispPlus68)
+
+df3 <- df3 %>% filter(MEASURE_DATE %within% interval)
+
+df3 %>% group_by(STUDY_ID, MEASURE_DATE) %>%
+  summarise(nWt = sum(!is.na(WT)),  # nWt is number of valid body weight measures per that day and patient
+            nNA = sum(is.na(WT)),
+            n = n()) 
+
+
+hp_interval <- interval(hp_df3$firstDispDate, hp_df3$firstDispPlus68)
+
+hp_df3 <- hp_df3 %>% filter(MEASURE_DATE %within% hp_interval)
+
+hp_df3 %>% group_by(STUDY_ID, MEASURE_DATE) %>%
+  summarise(nWt = sum(!is.na(WT)),  # nWt is number of valid body weight measures per that day and patient
+            nNA = sum(is.na(WT)),
+            n = n()) 
+
+```
+
+## create df3.0 which removes all rows with NA weight
+```{r}
+df3.0 <- df3 %>% drop_na(WT)
+sum(is.na(df3.0$WT))
+
+
+hp_df3.0 <- hp_df3 %>% drop_na(WT)
+sum(is.na(hp_df3.0$WT))
+```
+## Get rid of peculiar weight measurements
+```{r}
+View(df3.0 %>% arrange(WT))
+```
+There are 8646 rows of WT measurements 14 and below. After WT = 14, there is a stark jump to WT = 105. We will omit measurements of WT = 14 and below.
+
+```{r}
+df3.0 <- df3.0 %>%
+  filter(WT > 14)
+```
+
+
+```{r}
+df3.0 %>% distinct(STUDY_ID)
+```
+705 distinct patients for EHR. 
+
+
+Now get rid of peculiar weights for hp_df3.0, and let hp_df3.0 only contain WT measurements taken between weeks 0 and 68.
+```{r}
+View(hp_df3.0 %>% arrange(WT))
+```
+
+There appear to be a large number of patients with weight measurements under 20lb, which can be considered unusual
+```{r}
+hp_df3.0 %>% filter(WT <= 100) %>% distinct(STUDY_ID)
+
+hp_df3.0 %>% filter(WT <= 20) %>% distinct(STUDY_ID)
+
+hp_df3.0 %>% filter(WT == 0) %>% distinct(STUDY_ID)
+```
+
+There are 1766 patients with weight measurements 100 or less, and 1771 of them have weight measurements 20 or less. 
+There are also 4 patients with a weight measurement of 0, which we will get rid of. 
+**go over these with Jing to consider which weight measurements to remove**
+```{r}
+hp_df3.0 <- hp_df3.0 %>% filter(WT != 0)
+```
+
+
+```{r}
+hp_df3.0 %>% distinct(STUDY_ID)
+```
+5,451 distinct patients for HP.
+
+## Bind the rows of EHR and HP into one dataset
+```{r}
+all_df <- bind_rows(df3.0, hp_df3.0)
+
+all_df %>% distinct(STUDY_ID)
+```
+When binding the rows, we get 5,664 distinct STUDY_IDs. Since 5,664 is less than 705 + 5,451, there must be some overlap between the STUDY_IDs in EHR and HP data. 
+
+Let's check out the STUDY_ID overlap between EHR and HP:
+```{r}
+shared_IDs <- intersect(df3.0 %>% distinct(STUDY_ID), hp_df3.0 %>% distinct(STUDY_ID))
+
+shared_IDs
+
+left_join(shared_IDs, df3.0)
+left_join(shared_IDs, hp_df3.0)
+
+identical(left_join(shared_IDs, df3.0), left_join(shared_IDs, hp_df3.0))  ### NOT THE SAME
+```
+705 + 5,451 - 492 = 5664
+
+Okay, this makes sense in terms of distinct STUDY_ID count. 
+But, are the overlapping STUDY_IDs identical in content?
+
+
+
+```{r}
+all_df %>% distinct(STUDY_ID)
+all_df %>% group_by(STUDY_ID) %>% distinct(firstDispDate)
+```
+To note, there are 5664 distinct patients in all_df, but 5916 distinct first dispense dates when grouping by study_id. That means that up to 252 patients have more than one first dispense date. This is not right, and may be an error from merging the EHR and HP data. 
+(i.e. earlier we created a firstDispDate variable for each dataset (EHR vs HP) separately) 
+
+This is also why we had no issues getting a firstMeasDate when we were only using the EHR data, but now are getting firstMeasDates < firstDispDate. 
+
+Now we may need to restart the code with joining HP and EHR earlier on in the code (before firstDispDate is created). 
+
+
+
+#### check if the 492 are identical ##############
+
+## make sure that all MEASURE_DATES within our combined EHR & HP dataset are within 0-68 weeks. 
+```{r}
+all_interval <- interval(all_df$firstDispDate, all_df$firstDispPlus68)
+identical(all_df %>% filter(MEASURE_DATE %within% all_interval), all_df)
+```
+
+
+
+
+
+## See how many valid weights there are grouping by `STUDY_ID` and `MEASURE_DATE`. We will only want one observation per STUDY_ID and MEASURE_ID grouping, which will be the average of the measurements there. 
+```{r}
+df_avgWt <- all_df %>% group_by(STUDY_ID, MEASURE_DATE) %>%
+  summarise(nWt = sum(!is.na(WT)), # nWt is number of valid body weight measures per that day and patient
+            avgWt = mean(WT),
+            range = max(WT) - min(WT))  
+
+df_avgWt
+
+```
+Column for range is all 0, which means that all the weight measurements are the same per same `MEASURE_DATE` and same `STUDY_ID`.
+
+
+```{r}
+all_df_1 <- left_join(all_df, df_avgWt) %>% select(-c(nWt, range))
+
+all_df_1
+
+identical(all_df_1 %>% filter(MEASURE_DATE %within% all_interval), all_df_1)
+```
+```{r}
+summary(all_df_1$firstDispToEnd)
+
+ggplot(all_df_1, aes(firstDispToEnd)) +
+         geom_histogram(color = "black", fill = "white", bins = 50) +
+  labs(title = "Distribution of # of weeks between first dispense date \n and end of enrollment date",
+       x = "Number of Weeks")
+```
+We can be assured that all MEAUSRE_DATEs within all_df_1 are within 0-68 weeks.
+
+##### go back and make sure above graph and summary stats is per unique STUDY_ID#################
+
+
+```{r}
+countB <- df_avgWt %>% group_by(STUDY_ID) %>% 
+  summarise(nWeight = sum(!is.na(MEASURE_DATE)))
+
+
+ggplot(countB, aes(x = nWeight)) +
+  geom_histogram(color ="black", fill = "white", bins = 50)+ 
+  scale_x_continuous()+ 
+  labs(x = "Number of body weight measurements",
+       title = "Distribution of number of body weight measurements per patient",
+       subtitle = "between week 0 (week of first dispense) and week 68")
+
+ggplot(countB, aes(x = nWeight)) +
+  geom_freqpoly(bins = 50)+
+  scale_x_continuous() +
+    labs(x = "Number of body weight measurements",
+       title = "Frequency plot of number of body weight measurements per patient",
+       subtitle = "between week 0 (week of first dispense) and week 68")
+
+summary(countB$nWeight)
+```
+
+## For each patient with a valid body weight measurement, what is the mean, median, IQR number of days to their first body weight measurement (exclusive of the first dispensing date)?
+
+
+### Create a column for first MEASURE_DATE per patient between weeks 0 to 68
+```{r}
+all_df_2 <- all_df_1 %>% group_by(STUDY_ID) %>% mutate(firstMeasDate = min(MEASURE_DATE))
+
+all_df_2 %>% filter(firstMeasDate < firstDispDate)
+
+#### this is where the error is: where there are observations where firstMeasureDate < firstDispDate
+# original code:
+# firstMeasDates <- all_df_1 %>% group_by(STUDY_ID) %>% 
+#  summarise(firstMeasureDate = min(MEASURE_DATE))
+
+# all_df_2 <- left_join(all_df_1, firstMeasDates) 
+# all_df_2             # has 27773 observations where firstMeasureDate < firstDispDate
+
+# possible fix:
+
+
+#all_df_2 <-  all_df_1 %>% group_by(STUDY_ID) %>% filter(MEASURE_DATE == min(MEASURE_DATE))
+#all_df_2 %>% filter(MEASURE_DATE < firstDispDate) #no observations = good
+
+
+
+
+#df_c <- all_df_2 %>% group_by(STUDY_ID) %>% select(STUDY_ID, firstDispDate, MEASURE_DATE)
+
+# another possible fix
+
+firstMeasDates <- all_df_1 %>% arrange(STUDY_ID, MEASURE_DATE) %>% group_by(STUDY_ID) %>% summarise(firstMeasDate = first(MEASURE_DATE))
+left_join(all_df_1, firstMeasDates) %>% filter(firstMeasDate < firstDispDate)
+
+```
+
+
+```{r}
+#df_c$firstDispToFirstMeas <- difftime(df_c$MEASURE_DATE, df_c$firstDispDate, units = "days") %>% as.numeric()
+#df_c
+
+#summary(df_c$firstDispToFirstMeas)      #gives unrealistic numbers
+```
+
+### make a df_c just to help us with count C
+```{r}
+# df_c <- all_df_2 %>% select(STUDY_ID, firstDispDate, firstMeasureDate)
+```
+
+```{r}
+#df_c$firstDispToFirstMeas <-  difftime(df_c$firstMeasureDate, df_c$firstDispDate, units = "days") %>% as.numeric()
+#df_c
+
+#summary(df_c$firstDispToFirstMeas)
+#IQR(df_c$firstDispToFirstMeas)
+```
+Mean
+Median: 
+IQR: 
+
+```{r}
+#ggplot(df_c, aes(x = firstDispToFirstMeas)) + 
+#  geom_histogram(color = "black", fill = "cornsilk", bins = 50) +
+#   labs(x = "Number of days",
+# title = "Distribution of number of days between \n first dispense date 
+#and first body weight measurement date")
+
+```
+
+
+

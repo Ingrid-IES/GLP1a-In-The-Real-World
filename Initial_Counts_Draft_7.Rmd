@@ -1,0 +1,549 @@
+---
+title: "Initial Counts Draft 7"
+author: "Ingrid Shu"
+date: "7/24/2021"
+output: pdf_document
+---
+
+# In this draft: 
+* do not get rid of rows with NA weight or BMI.
+
+* lots of code dedicated to looking at baseline windows
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F)
+source_rmd <- function(file, local = FALSE, ...){
+  options(knitr.duplicate.label = 'allow')
+
+  tempR <- tempfile(tmpdir = ".", fileext = ".R")
+  on.exit(unlink(tempR))
+  knitr::purl(file, output=tempR, quiet = TRUE)
+
+  envir <- globalenv()
+  source(tempR, local = envir, ...)
+}
+```
+
+## Source code for demographic, death, enrollment, and dispensing read-in
+```{r}
+source_rmd("Data_Read_In_Before_Vitals_Table.rmd")
+```
+
+At this point, we are left with 4435 distinct patients who are dispensed GLP1a, have enrollment info, and have 72+ weeks between first dispense date and end of enrollment.
+
+## Read in vital table
+```{r warning = F, message = F}
+ehr_vital = read_csv("Excel_Data/PATH_JING_LUO_VITAL_2020_03_31.csv")
+ehr_vital
+ehr_vital %>% distinct(STUDY_ID)
+```
+
+971,891 rows, 14590 distinct patients in vital table.
+
+```{r}
+colSums(is.na(ehr_vital))
+```
+
+### Convert MEASURE_DATE to a date
+```{r}
+ehr_vital$MEASURE_DATE = as.Date(ehr_vital$MEASURE_DATE, "%m/%d/%Y")
+```
+
+### Are any patients missing all of their WT and BMI values?
+```{r}
+NA_wt_bmi = ehr_vital %>% group_by(STUDY_ID) %>% 
+  summarise(nWT = sum(!is.na(WT)), 
+  nBMI = sum(!is.na(ORIGINAL_BMI))) %>%
+  filter(nWT == 0 & nBMI == 0) 
+
+# convert column values of STUDY_ID in NA_wt_bmi to a vector
+NA_wt_bmi_IDs = as.vector(NA_wt_bmi[['STUDY_ID']]); NA_wt_bmi_IDs
+
+# filter out IDs that are in NA_wt_bmi_IDs
+ehr_vital1 = ehr_vital %>% filter(!(STUDY_ID %in% NA_wt_bmi_IDs) ); ehr_vital1
+
+ehr_vital1 %>% distinct(STUDY_ID)
+```
+Eliminated 45 patients when filtering out patients who had missing WTs and BMIs for all of their rows. 
+
+Now there are 14545 patients in the vital table. 
+
+## NOTE: There will be some rows that are missing both WT and BMI. But another row for the same STUDY_ID and MEASURE_DATE will include WT and/or BMI. 
+
+```{r}
+colSums(is.na(ehr_vital1))
+```
+Remove RAW_VITAL_SOURCE since it's missing for every row
+
+```{r}
+ehr_vital1 = ehr_vital1 %>% select(-RAW_VITAL_SOURCE)
+```
+
+```{r}
+View(ehr_vital1 %>% arrange(STUDY_ID, MEASURE_DATE)) 
+```
+
+For the same patient and same MEASURE_DATE, WT & BMI measures are mutually exclusive with Smoking & Tobacco info. 
+
+
+
+### Bother later with consolidating smoking/tobacco stuff with wt/bmi stuff from same measure date ###
+
+## Join disp_enroll4 with ehr_vital1
+```{r}
+disp_enroll_vitals = left_join(disp_enroll4, ehr_vital1, by = "STUDY_ID"); disp_enroll_vitals
+```
+
+## Check out NA values
+```{r}
+colSums(is.na(disp_enroll_vitals))
+```
+Lots of NA but we won't be so focused on getting rid of variables and observations this time, as they will be filtered out anyway when looking at certain analyses.
+
+## Do this again after the left join: 
+### Are any patients missing all of their WT and BMI values?
+Important to do after the left join because all the STUDY_IDs from disp_enroll stay in the df even if they would have been eliminated earlier in the 45 eliminations from vital table. 
+
+```{r}
+NA_wt_bmi_2 = disp_enroll_vitals %>% group_by(STUDY_ID) %>% 
+  summarise(nWT = sum(!is.na(WT)), 
+  nBMI = sum(!is.na(ORIGINAL_BMI))) %>%
+  filter(nWT == 0 & nBMI == 0) 
+
+# convert column values of STUDY_ID in NA_wt_bmi_2 to a vector
+NA_wt_bmi_IDs_2 = as.vector(NA_wt_bmi_2[['STUDY_ID']]); NA_wt_bmi_IDs_2
+
+# check that NA_wt_bmi_IDs_2 contain NA for all body metrics
+disp_enroll_vitals %>% filter((STUDY_ID %in% NA_wt_bmi_IDs_2) ) %>% select(STUDY_ID, HT, WT, ORIGINAL_BMI) %>% View()
+
+# filter out IDs that are in NA_wt_bmi_IDs_2
+disp_enroll_vitals1 = disp_enroll_vitals %>% filter(!(STUDY_ID %in% NA_wt_bmi_IDs_2) ); disp_enroll_vitals1
+
+disp_enroll_vitals1 %>% distinct(STUDY_ID)
+```
+
+```{r}
+disp_enroll_vitals1 %>% nrow()
+distinct(disp_enroll_vitals1) %>% nrow()
+
+
+disp_enroll_vitals2 = distinct(disp_enroll_vitals1); disp_enroll_vitals2 %>% group_by(STUDY_ID)
+```
+
+4426 distinct patients with 
+- dispensed a GLP1a
+- have enrollment info
+- 72+ weeks between first dispensement and end of enrollment
+- have *some* vital info (at least one WT and/or BMI on record)
+
+## Rows that have a valid WT
+```{r}
+disp_enroll_vitals2 %>% filter(!is.na(WT))
+```
+4424 distinct patients with 
+- dispensed a GLP1a
+- have enrollment info
+- 72+ weeks between first dispensement and end of enrollment
+- have at least one WT on record
+
+## A closer look at 4426 vs 4424 (at least one WT and/or BMI *versus* at least one WT)
+```{r}
+setdiff_IDs = setdiff(disp_enroll_vitals2 %>% distinct(STUDY_ID), disp_enroll_vitals2 %>% filter(!is.na(WT)) %>% distinct(STUDY_ID) ); setdiff_IDs
+
+# convert column values of STUDY_ID in setdiff_IDs to a vector
+setdiff_IDs = as.vector(setdiff_IDs[['STUDY_ID']]); setdiff_IDs
+
+disp_enroll_vitals2 %>% filter(STUDY_ID %in% setdiff_IDs) %>% select(STUDY_ID, HT, WT, ORIGINAL_BMI)
+```
+2 patients who are missing HT & WT for ALL their rows but have AT LEAST ONE BMI 
+
+## Rows that have a BMI but are missing WT
+```{r}
+disp_enroll_vitals2 %>% filter(is.na(WT) & !is.na(ORIGINAL_BMI)) %>% select(STUDY_ID, WT, ORIGINAL_BMI, HT)
+```
+2018 patients have at least one row that is missing WT but has BMI
+
+## How many rows that have a BMI but are missing WT also have a HT (That we can calculate WT with)?
+```{r}
+disp_enroll_vitals2 %>% filter(is.na(WT) & !is.na(ORIGINAL_BMI) & !is.na(HT)) %>% select(STUDY_ID, WT, ORIGINAL_BMI, HT)
+```
+* look into calculating WT for these 176 patients thru their valid BMI and HT *
+
+## Rows that have both WT and BMI
+```{r}
+disp_enroll_vitals2 %>% filter(!is.na(WT) & !is.na(ORIGINAL_BMI))
+
+
+colSums(is.na(disp_enroll_vitals2 %>% filter(!is.na(WT) & !is.na(ORIGINAL_BMI))))
+```
+4420 patients have at least one row that contains both their WT and BMI
+Reaffirming that rows that have complete WT & BMI are mutually exclusive with rows that have complete SMOKING/TOBACCO/TOBACCO_TYPE
+
+## Rows that have neither WT nor BMI
+```{r}
+disp_enroll_vitals2 %>% filter(is.na(WT) & is.na(ORIGINAL_BMI))
+```
+4416 patients have at least one row that is missing both their WT and BMI (but these rows are kept as they can provide SMOKING info) 
+
+## Flag unusual/potentially erroneous WTs and BMIs
+```{r}
+disp_enroll_vitals3 = disp_enroll_vitals2 %>%
+  mutate(
+    below70WT = ifelse(WT < 70, 1, 0),
+    above700WT = ifelse(WT > 700, 1, 0),
+    below15BMI = ifelse(ORIGINAL_BMI < 15, 1, 0),
+    above90BMI = ifelse(ORIGINAL_BMI > 90, 1, 0)
+    )
+
+disp_enroll_vitals3
+```
+
+## Flag MEASURE_DATES that are between weeks (0 , 68])
+## Also flag MEASURE_DATEs that are between weeks (-8,0]
+```{r}
+disp_enroll_vitals3 = disp_enroll_vitals3 %>% mutate(
+  measBetween0_68 = ifelse(MEASURE_DATE > firstDispDate & MEASURE_DATE <= firstDispPlus68W, 1, 0),
+  measBetweenN8_0 = ifelse(MEASURE_DATE > firstDispDate - weeks(8) & MEASURE_DATE <= firstDispDate, 1, 0)
+)
+
+disp_enroll_vitals3 %>% select(STUDY_ID, firstDispDate, MEASURE_DATE , measBetween0_68, measBetweenN8_0) %>% distinct()
+```
+
+## Be mindful to also apply the condition of !is.na(WT) (some MEASURE_DATEs have a missing WT but are still in dataset b/c might contain BMI and/or smoking)
+```{r}
+disp_enroll_vitals3 %>% filter(
+  measBetween0_68 == 1 & !is.na(WT)
+)
+
+disp_enroll_vitals3 %>% filter(
+  measBetweenN8_0 == 1 & !is.na(WT)
+)
+
+```
+
+If we only include people who have at least one wt in (-8,0] AND at least one wt in (0,68], we would have at most 2527 patients. 
+
+## Patients with at least one wt in (-8, 0] and at least one wt in (0,68]
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>% 
+            distinct(STUDY_ID), 
+          disp_enroll_vitals3 %>% filter(measBetweenN8_0 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+There are 2486 patients who have at least one wt in (-8,0] AND at least one wt in (0,68]. 
+
+
+## How many of the 4424 have 1+ body measures between week (0,72]?
+```{r}
+disp_enroll_vitals3 %>% filter(MEASURE_DATE > firstDispDate & MEASURE_DATE <= firstDispDate + weeks(72) & !is.na(WT))
+```
+3946 patients have 1+ body measures between week (0,72].
+
+
+## Trying out new baseline intervals
+## First: follow-up window upper bound @ 68 weeks
+Get a count of patients who have a measure in each of the following windows:
+
+* (-8, 2]
+
+* (-12, 2]
+
+* (-16, 2]
+
+* (-20, 2]
+
+* (-24, 2]
+
+
+And then:
+
+* (-8, 0]   ## already found to be 2527/4424
+
+* (-12, 0]
+
+* (-16, 0]
+
+* (-20, 0]
+
+* (-24, 0]
+
+### also do all of these intersections with (0, 68]
+
+## (-8,2]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(8) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+)
+```
+2672 patients have 1+ body measures between weeks (-8,2].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(8) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+
+2631 patients have 1+ body measure between weeks (-8, 2] AND (0, 68]
+
+
+## (-12,2]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(12) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+)
+```
+2875 patients have 1+ body measures between weeks (-12,2].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(12) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+2820 patients have 1+ body measure between weeks (-12, 2] AND (0, 68]
+
+## (-16,2]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(16) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+)
+```
+
+3011 patients have 1+ body measures between weeks (-16,2].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(16) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+2949 patients have 1+ body measure between weeks (-16, 2] AND (0, 68]
+
+
+## (-20,2]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(20) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+)
+```
+
+3106 patients have 1+ body measures between weeks (-20,2].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(20) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+3034 patients have 1+ body measure between weeks (-20, 2] AND (0, 68]
+
+
+## (-24,2]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(24) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+)
+```
+
+3187 patients have 1+ body measures between weeks (-24,2].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(24) & MEASURE_DATE <= firstDispDate + weeks(2) & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+3106 patients have 1+ body measure between weeks (-24, 2] AND (0, 68]
+
+## (-8,0]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(8) & MEASURE_DATE <= firstDispDate & !is.na(WT)
+)
+```
+2527 patients have 1+ body measures between weeks (-8,0].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(8) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+2486 patients have 1+ body measure between weeks (-8, 0] AND (0, 68]
+
+## (-12,0]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(12) & MEASURE_DATE <= firstDispDate & !is.na(WT)
+)
+```
+
+2771 patients have 1+ body measures between weeks (-12,0].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(12) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+2716 patients have 1+ body measure between weeks (-12, 0] AND (0, 68]
+
+## (-16,0]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(16) & MEASURE_DATE <= firstDispDate & !is.na(WT)
+)
+```
+
+2940 patients have 1+ body measures between weeks (-16,0].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(16) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+2878 patients have 1+ body measure between weeks (-16, 0] AND (0, 68]
+
+## (-20,0]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(20) & MEASURE_DATE <= firstDispDate & !is.na(WT)
+)
+```
+
+3047 patients have 1+ body measures between weeks (-20,0].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(20) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+2975 patients have 1+ body measure between weeks (-20, 0] AND (0, 68]
+
+## (-24,0]
+```{r}
+disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(24) & MEASURE_DATE <= firstDispDate & !is.na(WT)
+)
+```
+3133 patients have 1+ body measures between weeks (-24,0].
+
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(24) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         disp_enroll_vitals3 %>% filter(measBetween0_68 == 1 & !is.na(WT)) %>%
+            distinct(STUDY_ID))
+```
+3052 patients have 1+ body measure between weeks (-24, 0] AND (0, 68]
+
+## Second: follow-up window upper bound @ 72 weeks
+Get a count of patients who have a measure in each of the following windows:
+
+* (-8, 0]   
+
+* (-12, 0]
+
+* (-16, 0]
+
+* (-20, 0]
+
+* (-24, 0]
+
+### also do intersection with follow-up window (0, 72]
+
+First, create an object for IDs that have 1+ wt in weeks (0,72]
+```{r}
+measBetween0_72_IDs = disp_enroll_vitals3 %>% filter(MEASURE_DATE > firstDispDate &
+                                 MEASURE_DATE <= firstDispDate + weeks(72) &
+                                 !is.na(WT)
+                               ) %>% 
+  distinct(STUDY_ID)
+```
+
+## (-8,0] AND (0, 72]
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(8) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         measBetween0_72_IDs)
+```
+2487 patients have 1+ body measure between weeks (-8, 0] AND (0, 72]
+
+## (-12,0] AND (0, 72]
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(12) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         measBetween0_72_IDs)
+```
+2718 patients have 1+ body measure between weeks (-12, 0] AND (0, 72]
+
+## (-16,0] AND (0, 72]
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(16) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         measBetween0_72_IDs)
+```
+2880 patients have 1+ body measure between weeks (-16, 0] AND (0, 72]
+
+## (-20,0] AND (0, 72]
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(20) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         measBetween0_72_IDs)
+```
+2977 patients have 1+ body measure between weeks (-20, 0] AND (0, 72]
+
+## (-24,0] AND (0, 72]
+```{r}
+intersect(disp_enroll_vitals3 %>% filter(
+  MEASURE_DATE > firstDispDate - weeks(24) & MEASURE_DATE <= firstDispDate  & !is.na(WT)
+) %>% distinct(STUDY_ID), 
+         measBetween0_72_IDs)
+```
+3,056 patients have 1+ body measure between weeks (-24, 0] AND (0, 72]
+
+# Table 1 for baseline characteristics
+
+## Rudimentary table 1 attempt #1: July 26, 2021
+
+In order to include drug, baseline WT, baseline ORIGINAL_BMI later on, we still need to 
+
+(Look in lines 419 and beyond in DRAFT 6 for the first two)
+* 	Accounting for measure_dates that have 2+ differing weights:Choose one random weight from the measure_date to represent
+
+*	Only use first dispensed GLP1a in drug breakdown 
+
+* define baseline WT and BMI per patient
+
+```{r, message = F, warning = F}
+library(table1)
+
+tableOneVar = disp_enroll_vitals3 %>% select(SEX.f, RACE.f, RACE_WBO.f, HISPANIC_YN.f,AGE_ENROLLMENT_cat.f) %>% distinct()
+```
+
+```{r}
+label(tableOneVar$SEX.f) = "Sex" 
+label(tableOneVar$RACE.f) = "Race" 
+label(tableOneVar$RACE_WBO.f) = "Race (White/Black/Other)"
+label(tableOneVar$HISPANIC_YN.f) = "Hispanic"
+label(tableOneVar$AGE_ENROLLMENT_cat.f) = "Age"
+
+table1(~ SEX.f + RACE.f + RACE_WBO.f + HISPANIC_YN.f + AGE_ENROLLMENT_cat.f,  tableOneVar)
+```
+
